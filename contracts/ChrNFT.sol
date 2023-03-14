@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 /**
  * @title The Lost Keys Of Chronos contract
  * @dev Extends ERC721 Non-Fungible Token Standard basic implementation
@@ -16,7 +16,8 @@ contract ChrNFT is ERC721Enumerable, Ownable {
     uint256 public NFT_PRICE;
     uint256 public NFT_PRICE_WL;
     uint256 public MAX_ROUND2 = 10;
-    uint256 public MAX_PER_USER = 20;
+    uint256 public MAX_PER_USER = 40;
+    uint256 public MAX_PER_TX = 20;
     uint256 public SALE_START_TIMESTAMP;
     uint256 public MAX_RESERVE = 200;
     uint256 public MAX_PRIVATE = 1666;
@@ -33,7 +34,7 @@ contract ChrNFT is ERC721Enumerable, Ownable {
     constructor(
         uint256 _maxSupply, // 5555
         uint256 _nftPriceWL,  // 0.20 eth
-        uint256 _nftPrice,  // 0.23 eth
+        uint256 _nftPrice,  // 0.25 eth
         uint256 _startTimestamp
     ) ERC721("The Lost Keys Of Chronos", "chrNFT") {
         require(multiSig != address(0));
@@ -154,6 +155,8 @@ contract ChrNFT is ERC721Enumerable, Ownable {
         require(round != 0, "Sale has not started yet.");
         require(round != 4, "Sale has ended.");
 
+        require(amount <= MAX_PER_TX, "Can only mint 20 NFTs per TX");
+
         if (round == 1) {
             //  First Round: Whitelist, 1 mint max, Whitelist price
             require(isWhitelisted[msg.sender], "Not whitelisted.");
@@ -172,7 +175,7 @@ contract ChrNFT is ERC721Enumerable, Ownable {
             price = NFT_PRICE_WL;
         } else {
             //  Third Round: Public, 20 mint max, public price
-            require(balanceOf(msg.sender) + amount <= MAX_PER_USER, "Can only mint 20 NFTs per wallet");
+            require(balanceOf(msg.sender) + amount <= MAX_PER_USER, "Can only mint 40 NFTs per wallet");
 
             price = NFT_PRICE;
         }
@@ -211,15 +214,10 @@ contract ChrNFT is ERC721Enumerable, Ownable {
             return 0;
         }
 
-        return MAX_PER_USER-balanceOf(user); 
+        if( MAX_PER_TX <= MAX_PER_USER-balanceOf(user) ) return MAX_PER_TX;
+        
+        return MAX_PER_USER-balanceOf(user);
 
     }
 
-    function nextRound() public view returns( uint256 ) {
-        if ( block.timestamp < SALE_START_TIMESTAMP ) return SALE_START_TIMESTAMP;   // not started
-        if ( block.timestamp < SALE_START_TIMESTAMP + 1 days ) return SALE_START_TIMESTAMP + 1 days;   // phase 1 WL 1
-        if ( block.timestamp < SALE_START_TIMESTAMP + 2 days ) return SALE_START_TIMESTAMP + 2 days;   // phase 2 WL 10
-        if ( block.timestamp < SALE_START_TIMESTAMP + 5 days ) return SALE_START_TIMESTAMP + 5 days;   // phase 3 Public
-        return 0;   // minting finished
-    }
 }
