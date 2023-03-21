@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 /**
  * @title The Lost Keys Of Chronos contract
  * @dev Extends ERC721 Non-Fungible Token Standard basic implementation
@@ -15,29 +14,26 @@ contract ChrNFT is ERC721Enumerable, Ownable {
     uint256 public MAX_SUPPLY;
     uint256 public NFT_PRICE;
     uint256 public NFT_PRICE_WL;
-    uint256 public MAX_ROUND2 = 10;
-    uint256 public MAX_PER_USER = 40;
-    uint256 public MAX_PER_TX = 20;
     uint256 public SALE_START_TIMESTAMP;
-    uint256 public MAX_RESERVE = 200;
-    uint256 public MAX_PRIVATE = 1666;
+    uint256 public MAX_RESERVE = 1945;  // 30% of Max supply for private investors (0.3 eth each), 5% to team/treasury
     uint256 public reservedAmount;
-    uint256 public privateAmount;
-    address public multiSig = 0x0000000000000000000000000000000000000000;   // To Do
-    address public privateVesting;   // To Do
+    address public multiSig = 0x345E50e9B192fB77eA2c789d9b486FD425441FdD;
+
 
     mapping(address => bool) public isWhitelisted;
-    mapping(address => bool) public firstMint;
+    mapping(address => bool) public isOgUser;
+    mapping(address => uint256) public firstMint;
     mapping(address => uint256) public secondMint;
+    mapping(address => uint256) public thirdMint;
+
     mapping(address => uint256) public originalMinters;
 
     constructor(
         uint256 _maxSupply, // 5555
-        uint256 _nftPriceWL,  // 0.20 eth
-        uint256 _nftPrice,  // 0.25 eth
+        uint256 _nftPriceWL,  // 0.325 eth
+        uint256 _nftPrice,  // 0.35 eth
         uint256 _startTimestamp
     ) ERC721("The Lost Keys Of Chronos", "chrNFT") {
-        require(multiSig != address(0));
         MAX_SUPPLY = _maxSupply;
         NFT_PRICE = _nftPrice;
         NFT_PRICE_WL = _nftPriceWL;
@@ -55,54 +51,48 @@ contract ChrNFT is ERC721Enumerable, Ownable {
         }
     }
 
+    function setOgUser( address[] memory _users ) public onlyOwner {
+        for (uint256 i = 0; i < _users.length; i++) {
+            isOgUser[_users[i]] = true;
+        }
+    }
+
     function removeWhitelist( address[] memory _users ) public onlyOwner {
         for (uint256 i = 0; i < _users.length; i++) {
-            isWhitelisted[_users[i]] = true;
+            isWhitelisted[_users[i]] = false;
         }
     }
 
-    function setNftPrice(uint256 _nftPrice) external onlyOwner {
-        NFT_PRICE = _nftPrice;
-    }
-    function setNftPriceWL(uint256 _nftPriceWL) external onlyOwner {
-        NFT_PRICE_WL = _nftPriceWL;
-    }
-
-    function setPrivateVesting (address _privateVesting) external onlyOwner {
-        privateVesting = _privateVesting;
-    }
-    /**
-     * Mint NFTs by owner to team
-     */
-    function reserveNFTs(address _to, uint256 _amount) external onlyOwner {
-        require(_to != address(0), "Invalid address.");
-        require(reservedAmount + _amount <= MAX_RESERVE, "Invalid amount.");
-
-        for (uint256 i = 0; i < _amount; i++) {
-            if (totalSupply() < MAX_SUPPLY) {
-                _safeMint(_to, totalSupply());
-            }
+    function removeOgUser( address[] memory _users ) public onlyOwner {
+        for (uint256 i = 0; i < _users.length; i++) {
+            isOgUser[_users[i]] = false;
         }
-        originalMinters[_to] = originalMinters[_to] + _amount;
-        reservedAmount = reservedAmount + _amount;
     }
 
     /**
-     * Mint NFTs by owner to private investors. To be held by a vesting contract.
+     * Mint NFTs by owner to private investors.(They paid 0.3/ NFT eth before the launch)
      */
-    function phase0Mint(address _for, uint256 _amount) external onlyOwner {
-        address _to = privateVesting;
-        require(_to != address(0), "Invalid address to vesting contract.");
-        require(privateAmount + _amount <= MAX_PRIVATE, "Invalid amount.");
+    function reserveNFTs(address[] memory _to, uint256[] memory _amount) external onlyOwner {
+        require( _to.length != 0 , "Invalid length.");
+        require( _to.length == _amount.length , "Different length.");
 
-        for (uint256 i = 0; i < _amount; i++) {
-            if (totalSupply() < MAX_SUPPLY) {
-                _safeMint(_to, totalSupply());
+        for (uint i=0; i < _to.length; i++) {
+        
+            require(_to[i] != address(0), "Invalid address.");
+            require(_amount[i] != 0, "Invalid amount.");
+            require(reservedAmount + _amount[i] <= MAX_RESERVE, "Invalid amount.");
+
+            for (uint256 u = 0; u < _amount[i]; u++) {
+                if (totalSupply() < MAX_SUPPLY) {
+                    reservedAmount = reservedAmount + 1;
+                    _mint(_to[i], reservedAmount);
+                    
+                }
             }
+            originalMinters[_to[i]] = originalMinters[_to[i]] + _amount[i];
         }
-        originalMinters[_for] = originalMinters[_for] + _amount;
-        privateAmount = privateAmount + _amount;
     }
+
     /**
      * @dev Return the base URI
      */
@@ -142,10 +132,10 @@ contract ChrNFT is ERC721Enumerable, Ownable {
 
         
     function currentRound() public view returns( uint256 ) {
-        if ( block.timestamp < SALE_START_TIMESTAMP ) return 0;   // not started
-        if ( block.timestamp < SALE_START_TIMESTAMP + 1 days ) return 1;   // phase 1 WL 1
-        if ( block.timestamp < SALE_START_TIMESTAMP + 2 days ) return 2;   // phase 2 WL 10
-        if ( block.timestamp < SALE_START_TIMESTAMP + 5 days ) return 3;   // phase 3 Public
+        if ( block.timestamp <= SALE_START_TIMESTAMP ) return 0;   // not started
+        if ( block.timestamp <= SALE_START_TIMESTAMP + 2 hours ) return 1;   // phase 1: WL 1, OG 5
+        if ( block.timestamp <= SALE_START_TIMESTAMP + 4 hours ) return 2;   // phase 2: WL 2, OG 10
+        if ( block.timestamp <= SALE_START_TIMESTAMP + 2 days + 4 hours ) return 3;   // phase 3 Public, max 20
         return 4;   // minting finished
     }
 
@@ -155,28 +145,19 @@ contract ChrNFT is ERC721Enumerable, Ownable {
         require(round != 0, "Sale has not started yet.");
         require(round != 4, "Sale has ended.");
 
-        require(amount <= MAX_PER_TX, "Can only mint 20 NFTs per TX");
+        uint256 maxAmount = maxMint(msg.sender);
+
+        require(amount != 0, "You have to mint at least 1 NFT.");
+        require(amount <= maxAmount, "You can't mint that much NFTs in this round.");
 
         if (round == 1) {
-            //  First Round: Whitelist, 1 mint max, Whitelist price
-            require(isWhitelisted[msg.sender], "Not whitelisted.");
-            require(originalMinters[msg.sender] == 0, "Can only mint 1 in the first round");
-            require(!firstMint[msg.sender], "Already minted!");
-
-            firstMint[msg.sender] = true;
-            amount = 1;
+            firstMint[msg.sender] = firstMint[msg.sender] + amount;
             price = NFT_PRICE_WL;
         } else if (round == 2) {
-            //  Second Round: Whitelist, 10 mint max, Whitelist price
-            require(isWhitelisted[msg.sender], "Not whitelisted.");
-            require(secondMint[msg.sender] + amount <= MAX_ROUND2, "Can only mint 10 in the second round");
-
             secondMint[msg.sender] = secondMint[msg.sender] + amount;
             price = NFT_PRICE_WL;
         } else {
-            //  Third Round: Public, 20 mint max, public price
-            require(balanceOf(msg.sender) + amount <= MAX_PER_USER, "Can only mint 40 NFTs per wallet");
-
+            thirdMint[msg.sender] = thirdMint[msg.sender] + amount;
             price = NFT_PRICE;
         }
 
@@ -187,11 +168,11 @@ contract ChrNFT is ERC721Enumerable, Ownable {
     }
 
     function _mintTo(address account, uint amount) internal {
-        require(totalSupply() + amount <= MAX_SUPPLY, "Mint would exceed max supply.");
+        require(totalSupply()+ MAX_RESERVE + amount <= MAX_SUPPLY, "Mint would exceed max supply.");
 
         for (uint256 i = 0; i < amount; i++) {
-            if (totalSupply() < MAX_SUPPLY) {
-                _safeMint(account, totalSupply());
+            if ( totalSupply()+MAX_RESERVE+1 <= MAX_SUPPLY) {
+                _safeMint(account, totalSupply()+MAX_RESERVE+1 );
             }
         }
     }
@@ -199,25 +180,54 @@ contract ChrNFT is ERC721Enumerable, Ownable {
     function maxMint(address user) public view returns (uint max){
         uint round = currentRound();
 
-        if ( round == 0 || round == 4 ) return 0;
+        if ( round == 0 || round == 4 ) return 0;               // no mint if minting phase hasn't started/ has finished.
 
         if ( round == 1 ) {
-            if (isWhitelisted[user]) {
-                if (firstMint[user]) return 0;
-                return 1;
-            }
+            if (isOgUser[user]) return 5-firstMint[user];       // Og Users can mint 5 chrNFTs maximum on the first round.
+
+            if (isWhitelisted[user]) return 1-firstMint[user];  // Whitelist Users can mint 1 chrNFT maximum on the first round.
+
             return 0;
         }
 
         if ( round == 2 ) {
-            if (isWhitelisted[user]) return MAX_ROUND2 - secondMint[user];
+            if (isOgUser[user]) return 10-secondMint[user];     // Og Users can mint 10 chrNFTs maximum on the second round.
+
+            if (isWhitelisted[user]) return 2 - secondMint[user];   // Whitelist Users can mint 2 chrNFTs maximum on the second round.
+
             return 0;
         }
 
-        if( MAX_PER_TX <= MAX_PER_USER-balanceOf(user) ) return MAX_PER_TX;
-        
-        return MAX_PER_USER-balanceOf(user);
+        return 20-thirdMint[user];  // everyone can mint 20 chrNFTs maximum on the third round.
 
+    }
+
+    /*
+        Allow Trade of NFTs after Minting ends.
+        We make this to avoid people enter a loop of minting and dumping to get the promised minting airdrop.
+        People could mint for 0.35 and sell immediately for 0.33, and they would still get the airdrops.
+    */
+    function _transfer(
+        address from,
+        address to,
+        uint256 tokenId
+    ) internal override {
+        require( (currentRound() == 4) || (totalSupply() == MAX_SUPPLY), "Trading not allowed during Minting phase. ");
+        super._transfer(from,to,tokenId);
+    }
+
+    function _approve(address to, uint256 tokenId) internal override {
+        require( (currentRound() == 4) || (totalSupply() == MAX_SUPPLY), "Trading not allowed during Minting phase. ");
+        super._approve(to,tokenId);
+    }
+
+    function _setApprovalForAll(
+        address owner,
+        address operator,
+        bool approved
+    ) internal override {
+        require( (currentRound() == 4) || (totalSupply() == MAX_SUPPLY), "Trading not allowed during Minting phase. ");
+        super._setApprovalForAll(owner,operator,approved);
     }
 
 }
