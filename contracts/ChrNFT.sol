@@ -18,11 +18,11 @@ contract ChrNFT is ERC721Enumerable, Ownable {
     uint256 public NFT_PRICE_WL;  //0.325 eth
     uint256 public MAX_RESERVE = 1945;  // 30% of Max supply for private investors (0.3 eth each), 5% to team/treasury
     address public MULTISIG = 0x345E50e9B192fB77eA2c789d9b486FD425441FdD;
-    uint256 public WL1_MAX = 1;
-    uint256 public WL2_MAX = 2;
-    uint256 public OG1_MAX = 5;
-    uint256 public OG2_MAX = 10;
-    uint256 public PUBLIC_MAX = 20;
+    uint256 private WL1_MAX = 1;
+    uint256 private WL2_MAX = 2;
+    uint256 private OG1_MAX = 5;
+    uint256 private OG2_MAX = 10;
+    uint256 private PUBLIC_MAX = 20;
     uint256 public PHASE1_START = 1680105600;
     uint256 public PHASE2_START = PHASE1_START + 2 hours;
     uint256 public PHASE3_START = PHASE2_START + 2 hours;
@@ -30,9 +30,9 @@ contract ChrNFT is ERC721Enumerable, Ownable {
 
     mapping(address => bool) public isWhitelisted;
     mapping(address => bool) public isOgUser;
-    mapping(address => uint256) public firstMint;
-    mapping(address => uint256) public secondMint;
-    mapping(address => uint256) public thirdMint;
+    mapping(address => uint256) private firstMint;
+    mapping(address => uint256) private secondMint;
+    mapping(address => uint256) private thirdMint;
 
     mapping(address => uint256) public originalMinters;
 
@@ -213,8 +213,15 @@ contract ChrNFT is ERC721Enumerable, Ownable {
 
     /*
         Allow Trade of NFTs after Minting ends.
-        We make this to avoid people enter a loop of minting and dumping to get the promised minting airdrop.
-        People could mint for 0.35 and sell immediately for 0.33, and they would still get the airdrops.
+        Reason to disallow trading during minting phase:
+
+        chrNFT is an NFT that will give rewards both to holders and original minters.
+        If someone mints for 0.35 eth, instantly sells the minted NFT for 0.35 and repeat that several times,
+        he could have end up spending 0 eth, but he would still receive the minting rewards (future token airdrop).
+
+        To discourage that behaviour we have decided to cut that loophole by disallowing Trading during the minting phase.
+
+        That's the reason why we override those functions:
     */
     function _transfer(
         address from,
