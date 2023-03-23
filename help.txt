@@ -1,3 +1,0 @@
-npx hardhat run deploy/ChrNFT.js --network arbitrumOneTestnet
-
-npx hardhat verify 0x25c6D43f9472B73e3681234B5324A4b7ad18aD96  5555 325000000000000000 350000000000000000 1680105600
