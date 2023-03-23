@@ -6,7 +6,7 @@ require("@nomiclabs/hardhat-etherscan");
 
 require("@nomiclabs/hardhat-web3");
 
-const { PRIVATEKEY, APIKEY } = require("./pvkey.js")
+const { PRIVATEKEY, TESTPRIVATEKEY, APIKEY } = require("./pvkey.js")
 
 module.exports = {
   // latest Solidity version
@@ -23,6 +23,7 @@ module.exports = {
       },
     ]
   },
+  defaultNetwork: 'arbitrumOne',
 
   networks: {
 
@@ -35,7 +36,7 @@ module.exports = {
     arbitrumOneTestnet: {
       url: "https://goerli-rollup.arbitrum.io/rpc",
       chainId: 421613,
-      accounts: PRIVATEKEY
+      accounts: TESTPRIVATEKEY
     },
    
 

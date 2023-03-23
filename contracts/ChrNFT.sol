@@ -11,14 +11,22 @@ contract ChrNFT is ERC721Enumerable, Ownable {
 
     // Base URI
     string private _baseURIextended;
-    uint256 public MAX_SUPPLY;
-    uint256 public NFT_PRICE;
-    uint256 public NFT_PRICE_WL;
-    uint256 public SALE_START_TIMESTAMP;
-    uint256 public MAX_RESERVE = 1945;  // 30% of Max supply for private investors (0.3 eth each), 5% to team/treasury
     uint256 public reservedAmount;
-    address public multiSig = 0x345E50e9B192fB77eA2c789d9b486FD425441FdD;
 
+    uint256 public MAX_SUPPLY;  //5555
+    uint256 public NFT_PRICE;    //0.35 eth
+    uint256 public NFT_PRICE_WL;  //0.325 eth
+    uint256 public MAX_RESERVE = 1945;  // 30% of Max supply for private investors (0.3 eth each), 5% to team/treasury
+    address public MULTISIG = 0x345E50e9B192fB77eA2c789d9b486FD425441FdD;
+    uint256 public WL1_MAX = 1;
+    uint256 public WL2_MAX = 2;
+    uint256 public OG1_MAX = 5;
+    uint256 public OG2_MAX = 10;
+    uint256 public PUBLIC_MAX = 20;
+    uint256 public PHASE1_START = 1680105600;
+    uint256 public PHASE2_START = PHASE1_START + 2 hours;
+    uint256 public PHASE3_START = PHASE2_START + 2 hours;
+    uint256 public MINT_PHASE_END = PHASE3_START + 2 days;
 
     mapping(address => bool) public isWhitelisted;
     mapping(address => bool) public isOgUser;
@@ -30,18 +38,16 @@ contract ChrNFT is ERC721Enumerable, Ownable {
 
     constructor(
         uint256 _maxSupply, // 5555
-        uint256 _nftPriceWL,  // 0.325 eth
-        uint256 _nftPrice,  // 0.35 eth
-        uint256 _startTimestamp
+        uint256 _NFT_PRICE_WL,  // 0.325 eth
+        uint256 _NFT_PRICE  // 0.35 eth
     ) ERC721("The Lost Keys Of Chronos", "chrNFT") {
         MAX_SUPPLY = _maxSupply;
-        NFT_PRICE = _nftPrice;
-        NFT_PRICE_WL = _nftPriceWL;
-        SALE_START_TIMESTAMP = _startTimestamp;
+        NFT_PRICE = _NFT_PRICE;
+        NFT_PRICE_WL = _NFT_PRICE_WL;
     }
 
     function withdraw() external onlyOwner {
-        (bool withdrawMultiSig, ) = multiSig.call{value: address(this).balance}("");
+        (bool withdrawMultiSig, ) = MULTISIG.call{value: address(this).balance}("");
         require(withdrawMultiSig, "Withdraw Failed.");
     }
 
@@ -75,6 +81,7 @@ contract ChrNFT is ERC721Enumerable, Ownable {
     function reserveNFTs(address[] memory _to, uint256[] memory _amount) external onlyOwner {
         require( _to.length != 0 , "Invalid length.");
         require( _to.length == _amount.length , "Different length.");
+        require( currentRound() == 4 || totalSupply() >= MAX_SUPPLY-MAX_RESERVE, "Mint for private can only be done after mintin end or sold out" );
 
         for (uint i=0; i < _to.length; i++) {
         
@@ -84,11 +91,12 @@ contract ChrNFT is ERC721Enumerable, Ownable {
 
             for (uint256 u = 0; u < _amount[i]; u++) {
                 if (totalSupply() < MAX_SUPPLY) {
-                    reservedAmount = reservedAmount + 1;
-                    _mint(_to[i], reservedAmount);
+                    
+                    _mint(_to[i], totalSupply()+1);
                     
                 }
             }
+            reservedAmount = reservedAmount + _amount[i];
             originalMinters[_to[i]] = originalMinters[_to[i]] + _amount[i];
         }
     }
@@ -130,12 +138,11 @@ contract ChrNFT is ERC721Enumerable, Ownable {
         }
     }
 
-        
     function currentRound() public view returns( uint256 ) {
-        if ( block.timestamp <= SALE_START_TIMESTAMP ) return 0;   // not started
-        if ( block.timestamp <= SALE_START_TIMESTAMP + 2 hours ) return 1;   // phase 1: WL 1, OG 5
-        if ( block.timestamp <= SALE_START_TIMESTAMP + 4 hours ) return 2;   // phase 2: WL 2, OG 10
-        if ( block.timestamp <= SALE_START_TIMESTAMP + 2 days + 4 hours ) return 3;   // phase 3 Public, max 20
+        if ( block.timestamp < PHASE1_START ) return 0;   // not started
+        if ( block.timestamp < PHASE2_START ) return 1;   // phase 1: WL 1, OG 5
+        if ( block.timestamp < PHASE3_START ) return 2;   // phase 2: WL 2, OG 10
+        if ( block.timestamp < MINT_PHASE_END ) return 3;   // phase 3 Public, max 20
         return 4;   // minting finished
     }
 
@@ -168,11 +175,11 @@ contract ChrNFT is ERC721Enumerable, Ownable {
     }
 
     function _mintTo(address account, uint amount) internal {
-        require(totalSupply()+ MAX_RESERVE + amount <= MAX_SUPPLY, "Mint would exceed max supply.");
+        require(totalSupply() + MAX_RESERVE + amount <= MAX_SUPPLY, "Mint would exceed max supply.");
 
         for (uint256 i = 0; i < amount; i++) {
-            if ( totalSupply()+MAX_RESERVE+1 <= MAX_SUPPLY) {
-                _safeMint(account, totalSupply()+MAX_RESERVE+1 );
+            if ( totalSupply() < MAX_SUPPLY) {
+                _safeMint(account, totalSupply() + 1 );
             }
         }
     }
@@ -180,25 +187,27 @@ contract ChrNFT is ERC721Enumerable, Ownable {
     function maxMint(address user) public view returns (uint max){
         uint round = currentRound();
 
-        if ( round == 0 || round == 4 ) return 0;               // no mint if minting phase hasn't started/ has finished.
+        if ( round == 0 || round == 4 ) return 0;                           // no mint if minting phase hasn't started/ has finished.
 
         if ( round == 1 ) {
-            if (isOgUser[user]) return 5-firstMint[user];       // Og Users can mint 5 chrNFTs maximum on the first round.
+            if (isOgUser[user]) return OG1_MAX - firstMint[user];           // Og Users can mint 5 chrNFTs maximum on the first round.
 
-            if (isWhitelisted[user]) return 1-firstMint[user];  // Whitelist Users can mint 1 chrNFT maximum on the first round.
+            if (isWhitelisted[user]) return WL1_MAX - firstMint[user];      // Whitelist Users can mint 1 chrNFT maximum on the first round.
 
             return 0;
         }
 
         if ( round == 2 ) {
-            if (isOgUser[user]) return 10-secondMint[user];     // Og Users can mint 10 chrNFTs maximum on the second round.
+            if (isOgUser[user]) return OG2_MAX - secondMint[user];          // Og Users can mint 10 chrNFTs maximum on the second round.
 
-            if (isWhitelisted[user]) return 2 - secondMint[user];   // Whitelist Users can mint 2 chrNFTs maximum on the second round.
+            if (isWhitelisted[user]) return WL2_MAX - secondMint[user];     // Whitelist Users can mint 2 chrNFTs maximum on the second round.
 
             return 0;
         }
 
-        return 20-thirdMint[user];  // everyone can mint 20 chrNFTs maximum on the third round.
+        if ( MAX_SUPPLY-MAX_RESERVE-totalSupply() < 20 ) return MAX_SUPPLY-MAX_RESERVE-totalSupply()-thirdMint[user];
+
+        return PUBLIC_MAX - thirdMint[user];  // everyone can mint 20 chrNFTs maximum on the third round.
 
     }
 
