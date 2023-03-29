@@ -56,7 +56,7 @@ contract StakingNFTFeeConverter  {
     constructor() {
         owner = msg.sender;
         lastRewardtime = 0;
-        weth = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
+        weth = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
     }
 
 

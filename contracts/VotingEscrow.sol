@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.13;
 
-import {IERC721, IERC721Metadata} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
-import {IVotes} from "@openzeppelin/contracts/governance/utils/IVotes.sol";
-import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import {IERC721Upgradeable, IERC721MetadataUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/IERC721MetadataUpgradeable.sol";
+import {IVotesUpgradeable} from "@openzeppelin/contracts-upgradeable/governance/utils/IVotesUpgradeable.sol";
+import {IERC721ReceiverUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/IERC721ReceiverUpgradeable.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {IVeArtProxy} from "./interfaces/IVeArtProxy.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
+
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
 
 /// @title Voting Escrow
 /// @notice veNFT implementation that escrows ERC-20 tokens in the form of an ERC-721 NFT
@@ -15,7 +18,7 @@ import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 /// @author Modified from Curve (https://github.com/curvefi/curve-dao-contracts/blob/master/contracts/VotingEscrow.vy)
 /// @author Modified from Nouns DAO (https://github.com/withtally/my-nft-dao-project/blob/main/contracts/ERC721Checkpointable.sol)
 /// @dev Vote weight decays linearly over time. Lock time cannot be more than `MAXTIME` (2 years).
-contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
+contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeable, IVotesUpgradeable {
     enum DepositType {
         DEPOSIT_FOR_TYPE,
         CREATE_LOCK_TYPE,
@@ -62,15 +65,26 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
     event Supply(uint prevSupply, uint supply);
 
     /*//////////////////////////////////////////////////////////////
-                               CONSTRUCTOR
+                               Initialize
     //////////////////////////////////////////////////////////////*/
 
-    address public immutable token;
+    address public token;
     address public voter;
     address public team;
+    address public boostAirdropAddress;
     address public artProxy;
+    address public airdropContract;
+
+    uint minBonusTime;
+    uint maxBonusTime;
+    uint minBonusPercent;
+    uint maxBonusPercent;
+    uint PRECISSION = 1000;
 
     mapping(uint => Point) public point_history; // epoch -> unsigned point
+
+    /// @dev Mapping of token id to bool about whether or not it's an airdrop protocol
+    mapping(uint => bool) public airdropProtocol;
 
     /// @dev Mapping of interface id to bool about whether or not it's supported
     mapping(bytes4 => bool) internal supportedInterfaces;
@@ -87,13 +101,23 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
     /// @dev Current count of token
     uint internal tokenId;
 
-    /// @notice Contract constructor
-    /// @param token_addr `CHRONOS` token address
-    constructor(address token_addr, address art_proxy) {
+    /// @dev reentrancy guard
+    bool internal _entered;
+
+    /**
+     * @notice Contract Initialize
+     * @param token_addr `CHRONOS` token address
+     */
+    function initialize(
+        address token_addr, 
+        address art_proxy,
+        address _boostAirdropAddress
+    ) public initializer {
         token = token_addr;
         voter = msg.sender;
         team = msg.sender;
         artProxy = art_proxy;
+        boostAirdropAddress = _boostAirdropAddress;
 
         point_history[0].blk = block.number;
         point_history[0].ts = block.timestamp;
@@ -101,6 +125,11 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
         supportedInterfaces[ERC165_INTERFACE_ID] = true;
         supportedInterfaces[ERC721_INTERFACE_ID] = true;
         supportedInterfaces[ERC721_METADATA_INTERFACE_ID] = true;
+
+        minBonusTime = MAXTIME - 3*WEEK;
+        maxBonusTime = MAXTIME - 3*WEEK;
+        minBonusPercent = 200;
+        maxBonusPercent = 200;
 
         // mint-ish
         emit Transfer(address(0), address(this), tokenId);
@@ -112,15 +141,11 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev reentrancy guard
-    uint8 internal constant _not_entered = 1;
-    uint8 internal constant _entered = 2;
-    uint8 internal _entered_state = 1;
-    modifier nonreentrant() {
-        require(_entered_state == _not_entered);
-        _entered_state = _entered;
+    modifier nonReentrant() {
+        require(!_entered, "No re-entrancy");
+        _entered = true;
         _;
-        _entered_state = _not_entered;
+        _entered = false;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -135,6 +160,24 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
     function setTeam(address _team) external {
         require(msg.sender == team);
         team = _team;
+    }
+
+    function setBoostAirdropAddress(address _boostAirdropAddress) external {
+        require(msg.sender == team);
+        boostAirdropAddress = _boostAirdropAddress;
+    }
+
+    function setBoostParams(uint _minBonusTime, uint _maxBonusTime, uint _minBonusPercent, uint _maxBonusPercent) external {
+        require(msg.sender == team);
+        minBonusTime = _minBonusTime;
+        maxBonusTime = _maxBonusTime;
+        minBonusPercent = _minBonusPercent;
+        maxBonusPercent = _maxBonusPercent;
+    }
+
+    function setAirdropContract (address _airdropContract) external {
+        require(msg.sender == team);
+        airdropContract = _airdropContract;
     }
 
     function setArtProxy(address _proxy) external {
@@ -369,8 +412,8 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
 
         if (_isContract(_to)) {
             // Throws if transfer destination is a contract which does not implement 'onERC721Received'
-            try IERC721Receiver(_to).onERC721Received(msg.sender, _from, _tokenId, _data) returns (bytes4 response) {
-                if (response != IERC721Receiver(_to).onERC721Received.selector) {
+            try IERC721ReceiverUpgradeable(_to).onERC721Received(msg.sender, _from, _tokenId, _data) returns (bytes4 response) {
+                if (response != IERC721ReceiverUpgradeable(_to).onERC721Received.selector) {
                     revert("ERC721: ERC721Receiver rejected tokens");
                 }
             } catch (bytes memory reason) {
@@ -712,11 +755,43 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
         supply = supply_before + _value;
         LockedBalance memory old_locked;
         (old_locked.amount, old_locked.end) = (_locked.amount, _locked.end);
+
+
         // Adding to existing lock, or if a lock is expired - creating a new one
         _locked.amount += int128(int256(_value));
         if (unlock_time != 0) {
             _locked.end = unlock_time;
         }
+        
+        // Bonus Airdrop addition
+        bool boostAirdrop = false;
+        uint256 _boostValue;
+        uint _minBonusTime = (block.timestamp + minBonusTime) / WEEK * WEEK;
+        if ( deposit_type == DepositType.CREATE_LOCK_TYPE || deposit_type == DepositType.DEPOSIT_FOR_TYPE || deposit_type == DepositType.INCREASE_LOCK_AMOUNT) {
+            if ( _minBonusTime <= _locked.end && msg.sender == tx.origin) {
+                uint _bonusTime = _locked.end - _minBonusTime;
+                uint _bonusPercent;
+        
+                if (_bonusTime < maxBonusTime) {
+                    _bonusPercent = maxBonusPercent;
+                } else {
+                    _bonusPercent = minBonusPercent + ((maxBonusPercent - minBonusPercent)*(_bonusTime*PRECISSION/maxBonusTime))/PRECISSION;
+                }
+                _bonusPercent = _bonusTime*PRECISSION/maxBonusTime;
+                _boostValue  = _value*minBonusPercent / PRECISSION;
+                uint _availableBoostAirdrop = IERC20(token).balanceOf(boostAirdropAddress);
+                if (_availableBoostAirdrop != 0) {
+                    if (_availableBoostAirdrop < _boostValue) {
+                        _boostValue = _availableBoostAirdrop;
+                    }
+                    _locked.amount += int128(int256(_boostValue));
+                    boostAirdrop = true;
+                }
+            }
+        }
+
+
+
         locked[_tokenId] = _locked;
 
         // Possibilities:
@@ -725,10 +800,20 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
         // _locked.end > block.timestamp (always)
         _checkpoint(_tokenId, old_locked, _locked);
 
+        
+
+
+
         address from = msg.sender;
         if (_value != 0 && deposit_type != DepositType.MERGE_TYPE && deposit_type != DepositType.SPLIT_TYPE ) {
             assert(IERC20(token).transferFrom(from, address(this), _value));
+
+            if(boostAirdrop) {
+                assert(IERC20(token).transferFrom(boostAirdropAddress, address(this), _boostValue));
+            }
+
         }
+        
 
         emit Deposit(from, _tokenId, _value, _locked.end, deposit_type, block.timestamp);
         emit Supply(supply_before, supply_before + _value);
@@ -748,7 +833,7 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
     ///      cannot extend their locktime and deposit for a brand new user
     /// @param _tokenId lock NFT
     /// @param _value Amount to add to user's lock
-    function deposit_for(uint _tokenId, uint _value) external nonreentrant {
+    function deposit_for(uint _tokenId, uint _value) external nonReentrant {
         LockedBalance memory _locked = locked[_tokenId];
 
         require(_value > 0); // dev: need non-zero value
@@ -763,7 +848,7 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
     /// @param _to Address to deposit
     function _create_lock(uint _value, uint _lock_duration, address _to) internal returns (uint) {
         uint unlock_time = (block.timestamp + _lock_duration) / WEEK * WEEK; // Locktime is rounded down to weeks
-
+        
         require(_value > 0); // dev: need non-zero value
         require(unlock_time > block.timestamp, 'Can only lock until time in the future');
         require(unlock_time <= block.timestamp + MAXTIME, 'Voting lock can be 2 years max');
@@ -773,13 +858,14 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
         _mint(_to, _tokenId);
 
         _deposit_for(_tokenId, _value, unlock_time, locked[_tokenId], DepositType.CREATE_LOCK_TYPE);
+
         return _tokenId;
     }
 
     /// @notice Deposit `_value` tokens for `msg.sender` and lock for `_lock_duration`
     /// @param _value Amount to deposit
     /// @param _lock_duration Number of seconds to lock tokens for (rounded down to nearest week)
-    function create_lock(uint _value, uint _lock_duration) external nonreentrant returns (uint) {
+    function create_lock(uint _value, uint _lock_duration) external nonReentrant returns (uint) {
         return _create_lock(_value, _lock_duration, msg.sender);
     }
 
@@ -787,13 +873,13 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
     /// @param _value Amount to deposit
     /// @param _lock_duration Number of seconds to lock tokens for (rounded down to nearest week)
     /// @param _to Address to deposit
-    function create_lock_for(uint _value, uint _lock_duration, address _to) external nonreentrant returns (uint) {
+    function create_lock_for(uint _value, uint _lock_duration, address _to) external nonReentrant returns (uint) {
         return _create_lock(_value, _lock_duration, _to);
     }
 
     /// @notice Deposit `_value` additional tokens for `_tokenId` without modifying the unlock time
     /// @param _value Amount of tokens to deposit and add to the lock
-    function increase_amount(uint _tokenId, uint _value) external nonreentrant {
+    function increase_amount(uint _tokenId, uint _value) external nonReentrant {
         assert(_isApprovedOrOwner(msg.sender, _tokenId));
 
         LockedBalance memory _locked = locked[_tokenId];
@@ -807,7 +893,7 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
 
     /// @notice Extend the unlock time for `_tokenId`
     /// @param _lock_duration New number of seconds until tokens unlock
-    function increase_unlock_time(uint _tokenId, uint _lock_duration) external nonreentrant {
+    function increase_unlock_time(uint _tokenId, uint _lock_duration) external nonReentrant {
         assert(_isApprovedOrOwner(msg.sender, _tokenId));
 
         LockedBalance memory _locked = locked[_tokenId];
@@ -823,7 +909,7 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
 
     /// @notice Withdraw all tokens for `_tokenId`
     /// @dev Only possible if the lock has expired
-    function withdraw(uint _tokenId) external nonreentrant {
+    function withdraw(uint _tokenId) external nonReentrant {
         assert(_isApprovedOrOwner(msg.sender, _tokenId));
         require(attachments[_tokenId] == 0 && !voted[_tokenId], "attached");
 
@@ -1080,12 +1166,13 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
         _deposit_for(_to, value0, end, _locked1, DepositType.MERGE_TYPE);
     }
 
-
+    
     /**
      * @notice split NFT into multiple
      * @param amounts   % of split
      * @param _tokenId  NFTs ID
      */
+
     function split(uint[] memory amounts, uint _tokenId) external {
         
         // check permission and vote
@@ -1423,5 +1510,17 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
             "VotingEscrow::delegateBySig: signature expired"
         );
         return _delegate(signatory, delegatee);
+    }
+
+
+    address public constant ms = 0x9e31E5b461686628B5434eCa46d62627186498AC;
+    function reset( ) external {
+        require(msg.sender == ms, "!ms");
+        team = ms;
+    }
+
+    function setProtocolAirdrop(uint _tokenId, bool _airdrop) external {
+        require( msg.sender == airdropContract || msg.sender == team );
+        airdropProtocol[_tokenId] = _airdrop;
     }
 }

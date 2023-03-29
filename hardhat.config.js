@@ -3,6 +3,7 @@ require("@nomiclabs/hardhat-waffle");
 require('@openzeppelin/hardhat-upgrades');
 
 require("@nomiclabs/hardhat-etherscan");
+require("hardhat-interface-generator");
 
 require("@nomiclabs/hardhat-web3");
 
@@ -33,9 +34,9 @@ module.exports = {
       accounts: PRIVATEKEY
     },
 
-    arbitrumOneTestnet: {
-      url: "https://goerli-rollup.arbitrum.io/rpc",
-      chainId: 421613,
+    bscScan: {
+      url: "https://bsc-dataseed4.binance.org",
+      chainId: 56,
       accounts: TESTPRIVATEKEY
     },
    

@@ -23,7 +23,7 @@ contract Router is IRouter {
     bytes32 immutable pairCodeHash;
 
     // create swap event with sender and amountIn for the referral event reader system
-    event Swap(address indexed sender,uint amount0In,address _tokenIn, address indexed to);  
+    event Swap(address indexed sender,uint amount0In,address _tokenIn, address indexed to, bool stable);  
 
     modifier ensure(uint deadline) {
         require(deadline >= block.timestamp, 'Router: EXPIRED');
@@ -326,7 +326,7 @@ contract Router is IRouter {
                 amount0Out, amount1Out, to, new bytes(0)
             );
         }
-        emit Swap(msg.sender, amounts[0], routes[0].from, _to);
+        emit Swap(msg.sender,amounts[0],routes[0].from, _to, routes[0].stable);
     }
 
     function swapExactTokensForTokensSimple(

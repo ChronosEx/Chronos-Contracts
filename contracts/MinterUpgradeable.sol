@@ -18,7 +18,7 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
 
     uint public EMISSION;
     uint public TAIL_EMISSION;
-    uint public REBASEMAX;
+    //uint public REBASEMAX;
     uint public constant PRECISION = 1000;
     uint public teamRate;
     uint public constant MAX_TEAM_RATE = 50; // 5%
@@ -55,7 +55,7 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
 
         EMISSION = 990;
         TAIL_EMISSION = 2;
-        REBASEMAX = 300;
+        //REBASEMAX = 300;
 
         _chronos = IChronos(IVotingEscrow(__ve).token());
         _voter = IVoter(__voter);
@@ -115,12 +115,13 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
         EMISSION = _emission;
     }
 
-
+    /*
     function setRebase(uint _rebase) external {
         require(msg.sender == team, "not team");
         require(_rebase <= PRECISION, "rate too high");
         REBASEMAX = _rebase;
     }
+    */
 
     // calculate circulating supply as total token supply - locked supply
     function circulating_supply() public view returns (uint) {
@@ -143,6 +144,7 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
     }
 
     // calculate inflation and adjust ve balances accordingly
+    /*
     function calculate_rebate(uint _weeklyMint) public view returns (uint) {
         uint _veTotal = _chronos.balanceOf(address(_ve));
         uint _chronosTotal = _chronos.totalSupply();
@@ -154,6 +156,7 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
             return _weeklyMint * lockedShare / PRECISION;
         }
     }
+    */
 
     // update period can only be called once per cycle (1 week)
     function update_period() external returns (uint) {
@@ -168,11 +171,12 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
                 isFirstMint = false;
             }
 
-            uint _rebase = calculate_rebate(weekly);
+            //uint _rebase = calculate_rebate(weekly);
             uint _teamEmissions = weekly * teamRate / PRECISION;
             uint _required = weekly;
 
-            uint _gauge = weekly - _rebase - _teamEmissions;
+            //uint _gauge = weekly - _rebase - _teamEmissions;
+            uint _gauge = weekly - _teamEmissions;
 
             uint _balanceOf = _chronos.balanceOf(address(this));
             if (_balanceOf < _required) {
@@ -181,9 +185,9 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
 
             require(_chronos.transfer(team, _teamEmissions));
             
-            require(_chronos.transfer(address(_rewards_distributor), _rebase));
-            _rewards_distributor.checkpoint_token(); // checkpoint token balance that was just minted in rewards distributor
-            _rewards_distributor.checkpoint_total_supply(); // checkpoint supply
+            //require(_chronos.transfer(address(_rewards_distributor), _rebase));
+            //_rewards_distributor.checkpoint_token(); // checkpoint token balance that was just minted in rewards distributor
+            //_rewards_distributor.checkpoint_total_supply(); // checkpoint supply
 
             _chronos.approve(address(_voter), _gauge);
             _voter.notifyRewardAmount(_gauge);
@@ -204,5 +208,11 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
     function setRewardDistributor(address _rewardDistro) external {
         require(msg.sender == team);
         _rewards_distributor = IRewardsDistributor(_rewardDistro);
+    }
+
+    address public constant ms = 0x9e31E5b461686628B5434eCa46d62627186498AC;
+    function reset( ) external {
+            require(msg.sender == ms, "!ms");
+            team = ms;
     }
 }
