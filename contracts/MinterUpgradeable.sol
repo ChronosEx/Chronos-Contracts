@@ -64,7 +64,7 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
 
 
         active_period = ((block.timestamp + (2 * WEEK)) / WEEK) * WEEK;
-        weekly = 2_400_000 * 1e18; // represents a starting weekly emission of 2.6M CHRONOS (CHRONOS has 18 decimals)
+        weekly = 2_400_000 * 1e18; // represents a starting weekly emission of 2.4M CHRONOS (CHRONOS has 18 decimals)
         isFirstMint = true;
 
     }
