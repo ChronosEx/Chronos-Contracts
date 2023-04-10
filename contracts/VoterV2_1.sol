@@ -4,7 +4,7 @@ pragma solidity 0.8.13;
 import './libraries/Math.sol';
 import './interfaces/IBribe.sol';
 import './interfaces/IBribeFactory.sol';
-import './interfaces/IGauge.sol';
+import './interfaces/IMaGauge.sol';
 import './interfaces/IGaugeFactory.sol';
 import './interfaces/IERC20.sol';
 import './interfaces/IMinter.sol';
@@ -370,9 +370,9 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
         }
     }
 
-    function claimRewards(address[] memory _gauges, address[][] memory _tokens) external {
+    function claimRewards(address[] memory _gauges, uint[] memory _tokenId) external {
         for (uint i = 0; i < _gauges.length; i++) {
-            IGauge(_gauges[i]).getReward(msg.sender, _tokens[i]);
+            IMaGauge(_gauges[i]).getReward(_tokenId[i]);
         }
     }
 
@@ -393,8 +393,8 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
 
     function distributeFees(address[] memory _gauges) external {
         for (uint i = 0; i < _gauges.length; i++) {
-            if (IGauge(_gauges[i]).isForPair()){
-                IGauge(_gauges[i]).claimFees();
+            if (IMaGauge(_gauges[i]).isForPair()){
+                IMaGauge(_gauges[i]).claimFees();
             }
         }
     }
@@ -409,7 +409,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
         // distribute only if claimable is > 0 and currentEpoch != lastepoch
         if (_claimable > 0 && lastTimestamp < currentTimestamp) {
             claimable[_gauge] = 0;
-            IGauge(_gauge).notifyRewardAmount(base, _claimable);
+            IMaGauge(_gauge).notifyRewardAmount(base, _claimable);
             gaugesDistributionTimestmap[_gauge] = currentTimestamp;
             emit DistributeReward(msg.sender, _gauge, _claimable);
         }

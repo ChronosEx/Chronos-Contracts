@@ -24,7 +24,7 @@ interface IRewarder {
 }
 
 
-contract maGauge is ReentrancyGuard, Ownable {
+contract MaGauge is ReentrancyGuard, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 

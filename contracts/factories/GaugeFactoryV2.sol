@@ -2,7 +2,7 @@
 pragma solidity 0.8.13;
 
 import '../interfaces/IGaugeFactoryV2.sol';
-import '../GaugeV2.sol';
+import '../MaGauge.sol';
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -20,7 +20,7 @@ contract GaugeFactoryV2 is IGaugeFactory, OwnableUpgradeable {
     }
 
     function createGaugeV2(address _rewardToken,address _ve,address _token,address _distribution, address _internal_bribe, address _external_bribe, bool _isPair, address _maNFTs, uint _maGaugeId) external returns (address) {
-        last_gauge = address(new GaugeV2(_rewardToken,_ve,_token,_distribution,_internal_bribe,_external_bribe,_isPair, _maNFTs, _maGaugeId) );
+        last_gauge = address(new MaGauge(_rewardToken,_ve,_token,_distribution,_internal_bribe,_external_bribe,_isPair, _maNFTs, _maGaugeId) );
         return last_gauge;
     }
 
