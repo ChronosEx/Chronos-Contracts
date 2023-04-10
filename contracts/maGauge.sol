@@ -10,6 +10,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import './interfaces/IPair.sol';
 import './interfaces/IBribe.sol';
+import './interfaces/IMaLPNFT.sol';
 import "./libraries/Math.sol";
 
 interface IRewarder {
@@ -23,9 +24,18 @@ interface IRewarder {
 }
 
 
-contract GaugeV2 is ReentrancyGuard, Ownable {
+contract maGauge is ReentrancyGuard, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
+
+    struct PositionInfo {
+        uint amount;
+        uint rewardDebt;
+        uint rewardCredit;
+        uint entry; // position owner's relative entry into the pool.
+        uint poolId; // ensures that a single Relic is only used for one pool.
+        uint level;
+    }  
 
     bool public isForPair;
 
@@ -40,34 +50,63 @@ contract GaugeV2 is ReentrancyGuard, Ownable {
     address public external_bribe;
     address public maNFTs;
 
-    uint256 public rewarderPid;
     uint256 public DURATION;
     uint256 public periodFinish;
     uint256 public rewardRate;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
+    uint public maGaugeId;
 
     uint public fees0;
     uint public fees1;
 
-    mapping(address => uint256) public userRewardPerTokenPaid;
-    mapping(address => uint256) public rewards;
+    mapping(uint => uint256) public userRewardPerTokenPaid;
+    mapping(uint => uint256) public rewards;
 
     uint256 public _totalSupply;
-    mapping(address => uint256) public _balances;
+    mapping(uint => uint256) public _balances;
+    mapping(uint => uint256) public _depositEpoch;
+    mapping(uint => uint256) public _start;
+    uint nextEpoch;
 
     event RewardAdded(uint256 reward);
-    event Deposit(address indexed user, uint256 amount);
-    event Withdraw(address indexed user, uint256 amount);
-    event Harvest(address indexed user, uint256 reward);
+    event Deposit(address indexed user, uint tokenId, uint256 amount);
+    event Withdraw(address indexed user, uint tokenId, uint256 amount);
+    event Harvest(address indexed user, uint tokenId, uint256 reward);
     event ClaimFees(address indexed from, uint claimed0, uint claimed1);
 
-    modifier updateReward(address account) {
+
+
+    uint lastTimeAdjustedEpoch;
+    uint WEEK;
+    uint[16] balancesByEpoch;
+    uint PRECISION = 1000;
+
+
+    function updateReward(uint _tokenId) public adjustWeights {
         rewardPerTokenStored = rewardPerToken();
         lastUpdateTime = lastTimeRewardApplicable();
-        if (account != address(0)) {
-            rewards[account] = earned(account);
-            userRewardPerTokenPaid[account] = rewardPerTokenStored;
+        if (_tokenId != 0) {
+            rewards[_tokenId] = earned(_tokenId);
+            userRewardPerTokenPaid[_tokenId] = rewardPerTokenStored;
+        }
+    }
+
+
+    modifier adjustWeights() {
+
+        if( block.timestamp >= nextEpoch) {
+            
+            uint nextValue;
+            uint _nextValue;
+            for(uint i = 0; i < balancesByEpoch.length-1; i++) {
+                _nextValue = balancesByEpoch[i];
+                balancesByEpoch[i] = nextValue;
+                nextValue = _nextValue;
+            }
+            balancesByEpoch[balancesByEpoch.length-1] = balancesByEpoch[balancesByEpoch.length-1] + nextValue;
+
+            nextEpoch = nextEpoch + WEEK;
         }
         _;
     }
@@ -77,13 +116,18 @@ contract GaugeV2 is ReentrancyGuard, Ownable {
         _;
     }
 
+
+
     constructor(address _rewardToken,address _ve,address _token,address _distribution, address _internal_bribe, address _external_bribe, bool _isForPair, address _maNFTs, uint _maGaugeId) {
         rewardToken = IERC20(_rewardToken);     // main reward
         _VE = IERC20(_ve);                      // vested
         TOKEN = IERC20(_token);                 // underlying (LP)
         DISTRIBUTION = _distribution;           // distro address (voter)
-        DURATION = 7 * 86400;                    // distro time
-
+        DURATION = 7 * 86400;  
+        WEEK = 7 * 86400;                   // week
+        
+        nextEpoch = ((block.timestamp/WEEK)+1) * WEEK;
+        maGaugeId = _maGaugeId;
         maNFTs = _maNFTs;
 
         internal_bribe = _internal_bribe;       // lp fees goes here
@@ -107,21 +151,53 @@ contract GaugeV2 is ReentrancyGuard, Ownable {
         gaugeRewarder = _gaugeRewarder;
     }
 
-    ///@notice set extra rewarder pid
-    function setRewarderPid(uint256 _pid) external onlyOwner {
-        require(_pid >= 0, "zero");
-        require(_pid != rewarderPid, "same pid");
-        rewarderPid = _pid;
-    }
 
     ///@notice total supply held
     function totalSupply() public view returns (uint256) {
         return _totalSupply;
     }
 
-    ///@notice balance of a user
-    function balanceOf(address account) external view returns (uint256) {
-        return _balances[account];
+    ///@notice total weight of matured liquidity provided
+    function totalWeight() public view returns (uint256 _totalWeight) {
+        uint[] memory weightsAmount = IMaLPNFT(maNFTs).getWeightByEpoch();
+        uint _weightAmount;
+
+        for(uint i = 0; i < balancesByEpoch.length; i++) {
+            if (i <= weightsAmount.length) {
+                _weightAmount = weightsAmount[i];
+            }
+            _totalWeight = _totalWeight + (balancesByEpoch[i]*_weightAmount/PRECISION);
+        }
+    }
+
+    ///@notice balance of a position
+    function balanceOfToken(uint tokenId) external view returns (uint256) {
+        return _balances[tokenId];
+    }
+
+    ///@notice weight of a position
+    function weightOfToken(uint _tokenId) public view returns (uint256) {
+        uint _balance = _balances[_tokenId];
+        uint _matLevel = maturityLevelOfTokenMaxBoost( _tokenId );
+        uint[] memory weightsAmount = IMaLPNFT(maNFTs).getWeightByEpoch();
+        uint _weight = _balance*weightsAmount[_matLevel];
+        return _weight;
+    }
+
+    function maturityLevelOfTokenMaxBoost(uint _tokenId) public view returns (uint _matLevel) {
+        _matLevel = (block.timestamp/WEEK) - _depositEpoch[_tokenId];
+        uint _maxLevel = IMaLPNFT(maNFTs).totalMaLevels()-1;
+        if (_maxLevel < _matLevel) {
+            return _maxLevel;
+        }
+    }
+
+    function maturityLevelOfTokenMaxArray(uint _tokenId) public view returns (uint _matLevel) {
+        _matLevel = (block.timestamp/WEEK) - _depositEpoch[_tokenId];
+        uint _maxMat = balancesByEpoch.length-1;
+        if (_maxMat < _matLevel) {
+            return _maxMat;
+        }
     }
 
     ///@notice last time reward
@@ -129,18 +205,18 @@ contract GaugeV2 is ReentrancyGuard, Ownable {
         return Math.min(block.timestamp, periodFinish);
     }
 
-    ///@notice  reward for a sinle token
+    ///@notice  reward for a single token
     function rewardPerToken() public view returns (uint256) {
-        if (_totalSupply == 0) {
+        if (totalWeight() == 0) {
             return rewardPerTokenStored;
         } else {
-            return rewardPerTokenStored.add(lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRate).mul(1e18).div(_totalSupply));
+            return rewardPerTokenStored.add(lastTimeRewardApplicable().sub(lastUpdateTime).mul(rewardRate).mul(1e18).div(totalWeight()));
         }
     }
 
     ///@notice see earned rewards for user
-    function earned(address account) public view returns (uint256) {
-        return _balances[account].mul(rewardPerToken().sub(userRewardPerTokenPaid[account])).div(1e18).add(rewards[account]);
+    function earned(uint _tokenId) public view returns (uint256) {
+        return weightOfToken(_tokenId).mul(rewardPerToken().sub(userRewardPerTokenPaid[_tokenId])).div(1e18).add(rewards[_tokenId]);
     }
 
     ///@notice get total reward for the duration
@@ -150,79 +226,90 @@ contract GaugeV2 is ReentrancyGuard, Ownable {
 
 
     ///@notice deposit all TOKEN of msg.sender
-    function depositAll() external {
-        _deposit(TOKEN.balanceOf(msg.sender), msg.sender);
+    function depositAll() external returns(uint _tokenId) {
+        _tokenId = _deposit(TOKEN.balanceOf(msg.sender), msg.sender);
     }
 
     ///@notice deposit amount TOKEN
-    function deposit(uint256 amount) external {
-        _deposit(amount, msg.sender);
+    function deposit(uint256 amount) external returns(uint _tokenId) {
+        _tokenId = _deposit(amount, msg.sender);
     }
 
     ///@notice deposit internal
-    function _deposit(uint256 amount, address account) internal nonReentrant updateReward(account) {
+    function _deposit(uint256 amount, address account) internal nonReentrant returns(uint _tokenId) {
         require(amount > 0, "deposit(Gauge): cannot stake 0");
 
-        _balances[account] = _balances[account].add(amount);
+        _tokenId = IMaLPNFT(maNFTs).mint(account);
+        updateReward(_tokenId);
+
+        _balances[_tokenId] = _balances[_tokenId].add(amount);
+        _depositEpoch[_tokenId] = (block.timestamp/WEEK);
+
+        balancesByEpoch[0] = balancesByEpoch[0] + amount;
+        
         _totalSupply = _totalSupply.add(amount);
 
         TOKEN.safeTransferFrom(account, address(this), amount);
 
-        if (address(gaugeRewarder) != address(0)) {
-            IRewarder(gaugeRewarder).onReward(rewarderPid, account, account, 0, _balances[account]);
-        }
-
-        emit Deposit(account, amount);
+        emit Deposit(account, _tokenId, amount);
     }
 
     ///@notice withdraw all token
-    function withdrawAll() external {
+    /*function withdrawAll() external {
         _withdraw(_balances[msg.sender]);
-    }
+    }*/
 
     ///@notice withdraw a certain amount of TOKEN
-    function withdraw(uint256 amount) external {
-        _withdraw(amount);
+    function withdraw(uint256 _tokenId) external {
+        _withdraw(_tokenId);
     }
 
-    ///@notice withdar internal
-    function _withdraw(uint256 amount) internal nonReentrant updateReward(msg.sender) {
-        require(amount > 0, "Cannot withdraw 0");
+    ///@notice withdraw internal
+    function _withdraw(uint256 _tokenId) internal nonReentrant {
+        require(IMaLPNFT(maNFTs).isApprovedOrOwner(msg.sender,_tokenId));
+        require(IMaLPNFT(maNFTs).fromThisGauge(_tokenId));
+
+        updateReward(_tokenId);
+        uint amount = _balances[_tokenId];
+        require(_tokenId > 0, "token Must Exist");
+        require(amount > 0, "token Must Exist");
         require(_totalSupply.sub(amount) >= 0, "supply < 0");
-        require(_balances[msg.sender] > 0, "no balances");
+
 
         _totalSupply = _totalSupply.sub(amount);
-        _balances[msg.sender] = _balances[msg.sender].sub(amount);
+        uint level = maturityLevelOfTokenMaxArray(_tokenId);
+        balancesByEpoch[level] = balancesByEpoch[level] - amount;
+        
+        _balances[_tokenId] = _balances[_tokenId].sub(amount);
 
-        if (address(gaugeRewarder) != address(0)) {
-            IRewarder(gaugeRewarder).onReward(rewarderPid, msg.sender, msg.sender, 0, _balances[msg.sender]);
-        }
+        IMaLPNFT(maNFTs).burn(_tokenId);
 
         TOKEN.safeTransfer(msg.sender, amount);
 
-        emit Withdraw(msg.sender, amount);
+        emit Withdraw(msg.sender, _tokenId, amount);
     }
 
 
-    ///@notice withdraw all TOKEN and harvest rewardToken
-    function withdrawAllAndHarvest() external {
-        _withdraw(_balances[msg.sender]);
-        getReward();
+    ///@notice withdraw TOKEN and harvest rewardToken
+    function withdrawAndHarvest(uint _tokenId) external {
+        getReward(_tokenId);
+        _withdraw(_balances[_tokenId]);
     }
 
  
     ///@notice User harvest function
-    function getReward() public nonReentrant updateReward(msg.sender) {
-        uint256 reward = rewards[msg.sender];
+    function getReward(uint _tokenId) public nonReentrant {
+        require(IMaLPNFT(maNFTs).isApprovedOrOwner(msg.sender,_tokenId));
+        require(IMaLPNFT(maNFTs).fromThisGauge(_tokenId));
+        updateReward(_tokenId);
+        uint256 reward = rewards[_tokenId];
         if (reward > 0) {
-            rewards[msg.sender] = 0;
+            rewards[_tokenId] = 0;
             rewardToken.safeTransfer(msg.sender, reward);
-            emit Harvest(msg.sender, reward);
+            emit Harvest(msg.sender, _tokenId, reward);
         }
 
-        if (gaugeRewarder != address(0)) {
-            IRewarder(gaugeRewarder).onReward(rewarderPid, msg.sender, msg.sender, reward, _balances[msg.sender]);
-        }
+
     }
 
     function _periodFinish() external view returns (uint256) {
@@ -230,7 +317,8 @@ contract GaugeV2 is ReentrancyGuard, Ownable {
     }
 
     /// @dev Receive rewards from distribution
-    function notifyRewardAmount(address token, uint reward) external nonReentrant onlyDistribution updateReward(address(0)) {
+    function notifyRewardAmount(address token, uint reward) external nonReentrant onlyDistribution {
+        updateReward(0);
         require(token == address(rewardToken));
         rewardToken.safeTransferFrom(DISTRIBUTION, address(this), reward);
 
@@ -258,7 +346,7 @@ contract GaugeV2 is ReentrancyGuard, Ownable {
         return _claimFees();
     }
 
-     function _claimFees() internal returns (uint claimed0, uint claimed1) {
+    function _claimFees() internal returns (uint claimed0, uint claimed1) {
         if (!isForPair) {
             return (0, 0);
         }

@@ -12,6 +12,7 @@ import './interfaces/IPair.sol';
 import './interfaces/IPairFactory.sol';
 import './interfaces/IVoter.sol';
 import './interfaces/IVotingEscrow.sol';
+import './interfaces/IMaLPNFT.sol';
 import "hardhat/console.sol";
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -29,6 +30,8 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     address public minter;
     address public governor; // should be set to an IGovernor
     address public emergencyCouncil; // credibly neutral party similar to Curve's Emergency DAO
+    address public maNFTs;
+    uint public maGaugeId;
 
     uint internal index;
     mapping(address => uint) internal supplyIndex;
@@ -66,7 +69,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
 
     constructor() {}
 
-    function initialize(address __ve, address _factory, address  _gauges, address _bribes) initializer  public {
+    function initialize(address __ve, address _factory, address  _gauges, address _bribes, address _maNFTs) initializer  public {
         __Ownable_init();
         __ReentrancyGuard_init();
         _ve = __ve;
@@ -76,6 +79,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
         bribefactory = _bribes;
         minter = msg.sender;
         governor = msg.sender;
+        maNFTs = _maNFTs;
         emergencyCouncil = msg.sender;
     }
 
@@ -97,6 +101,11 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     function setGovernor(address _governor) public {
         require(msg.sender == governor);
         governor = _governor;
+    }
+
+    function setMaNFTs (address _maNFTs) public {
+        require(msg.sender == governor);
+        maNFTs = _maNFTs;
     }
 
     function setEmergencyCouncil(address _council) public {
@@ -243,7 +252,12 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
         _type = string.concat("Chronos Bribes: ", IERC20(_pool).symbol() );
         address _external_bribe = IBribeFactory(bribefactory).createBribe(owner(), tokenA, tokenB, _type);
 
-        address _gauge = IGaugeFactory(gaugefactory).createGaugeV2(base, _ve, _pool, address(this), _internal_bribe, _external_bribe, isPair);
+        ++maGaugeId;
+        uint _maGaugeId = maGaugeId;
+
+        address _gauge = IGaugeFactory(gaugefactory).createGaugeV2(base, _ve, _pool, address(this), _internal_bribe, _external_bribe, isPair, maNFTs, _maGaugeId);
+
+        IMaLPNFT(maNFTs).addGauge(_gauge, _pool, tokenA, tokenB, _maGaugeId);
 
         IERC20(base).approve(_gauge, type(uint).max);
         internal_bribes[_gauge] = _internal_bribe;
@@ -262,6 +276,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
         require(msg.sender == emergencyCouncil, "not emergency council");
         require(isAlive[_gauge], "gauge already dead");
         isAlive[_gauge] = false;
+        IMaLPNFT(maNFTs).killGauge(_gauge);
         claimable[_gauge] = 0;
         emit GaugeKilled(_gauge);
     }
@@ -270,6 +285,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
         require(msg.sender == emergencyCouncil, "not emergency council");
         require(!isAlive[_gauge], "gauge already alive");
         isAlive[_gauge] = true;
+        IMaLPNFT(maNFTs).reviveGauge(_gauge);
         emit GaugeRevived(_gauge);
     }
 
@@ -449,6 +465,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
         poolForGauge[_gauge] = address(0);
         isGauge[_gauge] = false;
         isAlive[_gauge] = false;
+        IMaLPNFT(maNFTs).killGauge(_gauge);
         claimable[_gauge] = 0;
         emit GaugeKilled(_gauge);
     }
