@@ -10,6 +10,9 @@ interface IBribe {
 }
 
 contract BribeFactoryV2 is OwnableUpgradeable {
+    
+    uint256[50] __gap;
+    
     address public last_bribe;
     address public voter;
 

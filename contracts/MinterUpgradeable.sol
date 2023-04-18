@@ -14,6 +14,10 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 contract MinterUpgradeable is IMinter, OwnableUpgradeable {
     
+    
+    uint256[50] __gap;
+    
+    
     bool public isFirstMint;
 
     uint public EMISSION;

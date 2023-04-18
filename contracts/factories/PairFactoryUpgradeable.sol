@@ -8,6 +8,9 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 contract PairFactoryUpgradeable is IPairFactory, OwnableUpgradeable {
 
+    
+    uint256[50] __gap;
+    
     bool public isPaused;
 
     uint256 public stableFee;

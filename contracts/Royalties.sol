@@ -13,7 +13,6 @@ import "./interfaces/IWETH.sol";
 interface IChrNFT {
     function originalMinters(address) external view returns(uint);
     function totalSupply() external view returns(uint);
-    function reservedAmount() external view returns(uint);
 }
 
 contract Royalties is ReentrancyGuard {
@@ -30,7 +29,6 @@ contract Royalties is ReentrancyGuard {
 
     mapping(uint => uint) public feesPerEpoch;
     mapping(uint => uint) public totalSupply;
-    mapping(uint => uint) public reservedAmounts;
     mapping(address => bool) public depositors;
     mapping(address => uint) public userCheckpoint;
 
@@ -69,7 +67,6 @@ contract Royalties is ReentrancyGuard {
 
         feesPerEpoch[epoch] = _amount;
         totalSupply[epoch] = chrnft.totalSupply();
-        reservedAmounts[epoch] = chrnft.reservedAmount();
         epoch++;
     }
 
@@ -99,7 +96,7 @@ contract Royalties is ReentrancyGuard {
 
     function claimable(address user) public view returns(uint) {
         require(user != address(0));
-        //Total fees * ChrNFT.originalMinters[msg.sender] / (ChrNFT.totalSupply - ChrNFT.reservedAmount)
+
         uint256 cp = userCheckpoint[user];
         if(cp >= epoch){
             return 0;
@@ -107,12 +104,11 @@ contract Royalties is ReentrancyGuard {
 
         uint i;
         uint256 _reward = 0;
+        uint256 weight = chrnft.originalMinters(user);
         for(i = cp; i < epoch; i++){
-            uint256 _resAmnt = reservedAmounts[i];
             uint256 _tot = totalSupply[i];
-            uint256 _fee = feesPerEpoch[i]; 
-            uint256 weight = chrnft.originalMinters(user);
-            _reward += _fee * weight / (_tot - _resAmnt);
+            uint256 _fee = feesPerEpoch[i];
+            _reward += _fee * weight / _tot;
         }  
         return _reward;
     }

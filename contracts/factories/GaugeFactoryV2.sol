@@ -11,6 +11,9 @@ interface IGauge{
 
 }
 contract GaugeFactoryV2 is IGaugeFactory, OwnableUpgradeable {
+    
+    uint256[50] __gap;
+    
     address public last_gauge;
 
     

@@ -20,6 +20,8 @@ import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.
 
 contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
 
+    uint256[50] __gap;
+    
     address public _ve; // the ve token that governs these contracts
     address public factory; // the PairFactory
     address internal base;

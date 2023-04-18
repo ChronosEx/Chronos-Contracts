@@ -18,6 +18,10 @@ import "./libraries/Math.sol";
 /// @author Modified from Nouns DAO (https://github.com/withtally/my-nft-dao-project/blob/main/contracts/ERC721Checkpointable.sol)
 /// @dev Vote weight decays linearly over time. Lock time cannot be more than `MAXTIME` (2 years).
 contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeable, IVotesUpgradeable {
+
+    
+    uint256[50] __gap;
+    
     enum DepositType {
         DEPOSIT_FOR_TYPE,
         CREATE_LOCK_TYPE,
