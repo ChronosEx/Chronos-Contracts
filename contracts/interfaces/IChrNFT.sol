@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.13;
 interface IChrNFT {
   function MAX_RESERVE (  ) external view returns ( uint256 );
   function MAX_SUPPLY (  ) external view returns ( uint256 );

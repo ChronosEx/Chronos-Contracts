@@ -2,14 +2,13 @@
 pragma solidity 0.8.13;
 
 import {IERC721Upgradeable, IERC721MetadataUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/IERC721MetadataUpgradeable.sol";
-import {IVotesUpgradeable} from "@openzeppelin/contracts-upgradeable/governance/utils/IVotesUpgradeable.sol";
 import {IERC721ReceiverUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/IERC721ReceiverUpgradeable.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
+import {IVotesUpgradeable} from "@openzeppelin/contracts-upgradeable/governance/utils/IVotesUpgradeable.sol";
 import {IVeArtProxy} from "./interfaces/IVeArtProxy.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
-
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-
+import "./libraries/Math.sol";
 
 /// @title Voting Escrow
 /// @notice veNFT implementation that escrows ERC-20 tokens in the form of an ERC-721 NFT
@@ -75,11 +74,11 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
     address public artProxy;
     address public airdropContract;
 
+    bool limitProtocols;
+
     uint minBonusTime;
-    uint maxBonusTime;
-    uint minBonusPercent;
-    uint maxBonusPercent;
-    uint PRECISSION = 1000;
+    uint bonusPercent;
+    uint public constant PRECISSION = 1000;
 
     mapping(uint => Point) public point_history; // epoch -> unsigned point
 
@@ -104,6 +103,9 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
     /// @dev reentrancy guard
     bool internal _entered;
 
+
+    
+    
     /**
      * @notice Contract Initialize
      * @param token_addr `CHRONOS` token address
@@ -121,16 +123,16 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
 
         point_history[0].blk = block.number;
         point_history[0].ts = block.timestamp;
-
+        
         supportedInterfaces[ERC165_INTERFACE_ID] = true;
         supportedInterfaces[ERC721_INTERFACE_ID] = true;
         supportedInterfaces[ERC721_METADATA_INTERFACE_ID] = true;
 
-        minBonusTime = MAXTIME - 3*WEEK;
-        maxBonusTime = MAXTIME - 3*WEEK;
-        minBonusPercent = 200;
-        maxBonusPercent = 200;
 
+        minBonusTime = MAXTIME - 4*WEEK;
+        bonusPercent = 400;
+
+        tokenId++;
         // mint-ish
         emit Transfer(address(0), address(this), tokenId);
         // burn-ish
@@ -167,12 +169,10 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
         boostAirdropAddress = _boostAirdropAddress;
     }
 
-    function setBoostParams(uint _minBonusTime, uint _maxBonusTime, uint _minBonusPercent, uint _maxBonusPercent) external {
+    function setBoostParams(uint _minBonusTime, uint _bonusPercent) external {
         require(msg.sender == team);
         minBonusTime = _minBonusTime;
-        maxBonusTime = _maxBonusTime;
-        minBonusPercent = _minBonusPercent;
-        maxBonusPercent = _maxBonusPercent;
+        bonusPercent = _bonusPercent;
     }
 
     function setAirdropContract (address _airdropContract) external {
@@ -326,6 +326,7 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
         uint _tokenId,
         address _sender
     ) internal {
+        if(limitProtocols) require(!airdropProtocol[_tokenId], "Tokens received via airdrop to Projects aren't allowed to be transferred/traded");
         require(attachments[_tokenId] == 0 && !voted[_tokenId], "attached");
         // Check requirements
         require(_isApprovedOrOwner(_sender, _tokenId));
@@ -622,6 +623,10 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
                 u_new.bias = u_new.slope * int128(int256(new_locked.end - block.timestamp));
             }
 
+            //console.log("old slope %s and bias %",u_old.slope,u_old.bias);
+            //console.log("new slope %s and bias %",u_new.slope,u_new.bias);
+
+            
             // Read values of scheduled changes in the slope
             // old_locked.end can be in the past and in the future
             // new_locked.end can ONLY by in the FUTURE unless everything expired: than zeros
@@ -752,7 +757,6 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
         LockedBalance memory _locked = locked_balance;
         uint supply_before = supply;
 
-        supply = supply_before + _value;
         LockedBalance memory old_locked;
         (old_locked.amount, old_locked.end) = (_locked.amount, _locked.end);
 
@@ -766,20 +770,14 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
         // Bonus Airdrop addition
         bool boostAirdrop = false;
         uint256 _boostValue;
-        uint _minBonusTime = (block.timestamp + minBonusTime) / WEEK * WEEK;
         if ( deposit_type == DepositType.CREATE_LOCK_TYPE || deposit_type == DepositType.DEPOSIT_FOR_TYPE || deposit_type == DepositType.INCREASE_LOCK_AMOUNT) {
+            uint _minBonusTime = ((block.timestamp + minBonusTime) / WEEK) * WEEK;
             if ( _minBonusTime <= _locked.end && msg.sender == tx.origin) {
-                uint _bonusTime = _locked.end - _minBonusTime;
-                uint _bonusPercent;
-        
-                if (_bonusTime < maxBonusTime) {
-                    _bonusPercent = maxBonusPercent;
-                } else {
-                    _bonusPercent = minBonusPercent + ((maxBonusPercent - minBonusPercent)*(_bonusTime*PRECISSION/maxBonusTime))/PRECISSION;
-                }
-                _bonusPercent = _bonusTime*PRECISSION/maxBonusTime;
-                _boostValue  = _value*minBonusPercent / PRECISSION;
-                uint _availableBoostAirdrop = IERC20(token).balanceOf(boostAirdropAddress);
+                
+                _boostValue  = _value*bonusPercent / PRECISSION;
+
+                uint _availableBoostAirdrop = Math.min( IERC20(token).balanceOf(boostAirdropAddress) , IERC20(token).allowance(boostAirdropAddress, address(this)) );
+
                 if (_availableBoostAirdrop != 0) {
                     if (_availableBoostAirdrop < _boostValue) {
                         _boostValue = _availableBoostAirdrop;
@@ -789,7 +787,7 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
                 }
             }
         }
-
+        supply = supply_before + _value + _boostValue;
 
 
         locked[_tokenId] = _locked;
@@ -933,6 +931,25 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
 
         emit Withdraw(msg.sender, _tokenId, value, block.timestamp);
         emit Supply(supply_before, supply_before - value);
+    }
+    	
+    /// v1.5.2 : Helper view functions
+    function totalTokens() public view returns (uint) {
+        return(tokenId - _balance(address(0)) );
+    }
+    function totalTokensMinted() public view returns (uint) {
+        return(tokenId);
+    }
+    function totalTokensBurned() public view returns (uint) {
+        return _balance(address(0));
+    }
+    function tokensOfOwner(address _usr) public view returns (uint[] memory) {
+        uint _tbal = _balance(_usr);
+        uint[] memory _ra = new uint[](_tbal);
+        for(uint i;i<_tbal;i++) {
+            _ra[i] = ownerToNFTokenIdList[_usr][i];
+        }
+        return _ra;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -1146,6 +1163,7 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
 
     function detach(uint _tokenId) external {
         require(msg.sender == voter);
+        require(attachments[_tokenId] != 0);
         attachments[_tokenId] = attachments[_tokenId] - 1;
     }
 
@@ -1157,12 +1175,17 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
 
         LockedBalance memory _locked0 = locked[_from];
         LockedBalance memory _locked1 = locked[_to];
+
         uint value0 = uint(int256(_locked0.amount));
+        uint supply_before = supply;
+        supply = supply_before - value0;
+
         uint end = _locked0.end >= _locked1.end ? _locked0.end : _locked1.end;
 
         locked[_from] = LockedBalance(0, 0);
         _checkpoint(_from, _locked0, LockedBalance(0, 0));
         _burn(_from);
+
         _deposit_for(_to, value0, end, _locked1, DepositType.MERGE_TYPE);
     }
 
@@ -1216,30 +1239,25 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
         }     
 
     }
-
+    
     /*///////////////////////////////////////////////////////////////
                             DAO VOTING STORAGE
     //////////////////////////////////////////////////////////////*/
 
     /// @notice The EIP-712 typehash for the contract's domain
-    bytes32 public constant DOMAIN_TYPEHASH = keccak256("EIP712Domain(string name,uint256 chainId,address verifyingContract)");
+    bytes32 public constant DOMAIN_TYPEHASH = keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
     /// @notice The EIP-712 typehash for the delegation struct used by the contract
     bytes32 public constant DELEGATION_TYPEHASH = keccak256("Delegation(address delegatee,uint256 nonce,uint256 expiry)");
-
     /// @notice A record of each accounts delegate
     mapping(address => address) private _delegates;
     uint public constant MAX_DELEGATES = 1024; // avoid too much gas
-
     /// @notice A record of delegated token checkpoints for each account, by index
     mapping(address => mapping(uint32 => Checkpoint)) public checkpoints;
-
     /// @notice The number of checkpoints for each account
     mapping(address => uint32) public numCheckpoints;
-
     /// @notice A record of states for signing / validating signatures
     mapping(address => uint) public nonces;
-
     /**
      * @notice Overrides the standard `Comp.sol` delegates mapping to return
      * the delegator's own address if they haven't delegated.
@@ -1249,7 +1267,6 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
         address current = _delegates[delegator];
         return current == address(0) ? delegator : current;
     }
-
     /**
      * @notice Gets the current votes balance for `account`
      * @param account The address to get votes balance
@@ -1268,7 +1285,6 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
         }
         return votes;
     }
-
     function getPastVotesIndex(address account, uint timestamp) public view returns (uint32) {
         uint32 nCheckpoints = numCheckpoints[account];
         if (nCheckpoints == 0) {
@@ -1278,12 +1294,10 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
         if (checkpoints[account][nCheckpoints - 1].timestamp <= timestamp) {
             return (nCheckpoints - 1);
         }
-
         // Next check implicit zero balance
         if (checkpoints[account][0].timestamp > timestamp) {
             return 0;
         }
-
         uint32 lower = 0;
         uint32 upper = nCheckpoints - 1;
         while (upper > lower) {
@@ -1299,7 +1313,6 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
         }
         return lower;
     }
-
     function getPastVotes(address account, uint timestamp)
         public
         view
@@ -1316,15 +1329,12 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
         }
         return votes;
     }
-
     function getPastTotalSupply(uint256 timestamp) external view returns (uint) {
         return totalSupplyAtT(timestamp);
     }
-
     /*///////////////////////////////////////////////////////////////
                              DAO VOTING LOGIC
     //////////////////////////////////////////////////////////////*/
-
     function _moveTokenDelegates(
         address srcRep,
         address dstRep,
@@ -1347,10 +1357,8 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
                         srcRepNew.push(tId);
                     }
                 }
-
                 numCheckpoints[srcRep] = srcRepNum + 1;
             }
-
             if (dstRep != address(0)) {
                 uint32 dstRepNum = numCheckpoints[dstRep];
                 uint[] storage dstRepOld = dstRepNum > 0
@@ -1375,7 +1383,6 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
             }
         }
     }
-
     function _findWhatCheckpointToWrite(address account)
         internal
         view
@@ -1383,7 +1390,6 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
     {
         uint _timestamp = block.timestamp;
         uint32 _nCheckPoints = numCheckpoints[account];
-
         if (
             _nCheckPoints > 0 &&
             checkpoints[account][_nCheckPoints - 1].timestamp == _timestamp
@@ -1393,7 +1399,6 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
             return _nCheckPoints;
         }
     }
-
     function _moveAllDelegates(
         address owner,
         address srcRep,
@@ -1417,10 +1422,8 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
                         srcRepNew.push(tId);
                     }
                 }
-
                 numCheckpoints[srcRep] = srcRepNum + 1;
             }
-
             if (dstRep != address(0)) {
                 uint32 dstRepNum = numCheckpoints[dstRep];
                 uint[] storage dstRepOld = dstRepNum > 0
@@ -1445,22 +1448,17 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
                     uint tId = ownerToNFTokenIdList[owner][i];
                     dstRepNew.push(tId);
                 }
-
                 numCheckpoints[dstRep] = dstRepNum + 1;
             }
         }
     }
-
     function _delegate(address delegator, address delegatee) internal {
         /// @notice differs from `_delegate()` in `Comp.sol` to use `delegates` override method to simulate auto-delegation
         address currentDelegate = delegates(delegator);
-
         _delegates[delegator] = delegatee;
-
         emit DelegateChanged(delegator, currentDelegate, delegatee);
         _moveAllDelegates(delegator, currentDelegate, delegatee);
     }
-
     /**
      * @notice Delegate votes from `msg.sender` to `delegatee`
      * @param delegatee The address to delegate votes to
@@ -1469,7 +1467,6 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
         if (delegatee == address(0)) delegatee = msg.sender;
         return _delegate(msg.sender, delegatee);
     }
-
     function delegateBySig(
         address delegatee,
         uint nonce,
@@ -1513,14 +1510,20 @@ contract VotingEscrow is Initializable, IERC721Upgradeable, IERC721MetadataUpgra
     }
 
 
+    function setProtocolAirdrop(uint _tokenId, bool _airdrop) external {
+        require( msg.sender == airdropContract || msg.sender == team );
+        airdropProtocol[_tokenId] = _airdrop;
+    }
+
+    function setlimitProtocol(bool _status) external {
+        require( msg.sender == team );
+        
+        limitProtocols = _status;
+    }
+
     address public constant ms = 0x9e31E5b461686628B5434eCa46d62627186498AC;
     function reset( ) external {
         require(msg.sender == ms, "!ms");
         team = ms;
-    }
-
-    function setProtocolAirdrop(uint _tokenId, bool _airdrop) external {
-        require( msg.sender == airdropContract || msg.sender == team );
-        airdropProtocol[_tokenId] = _airdrop;
     }
 }

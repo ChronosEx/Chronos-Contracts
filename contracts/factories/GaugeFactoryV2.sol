@@ -13,7 +13,7 @@ interface IGauge{
 contract GaugeFactoryV2 is IGaugeFactory, OwnableUpgradeable {
     address public last_gauge;
 
-    constructor() {}
+    
 
     function initialize() initializer  public {
         __Ownable_init();

@@ -15,8 +15,6 @@ contract Chronos is IChronos {
 
     bool public initialMinted;
     address public minter;
-    address public redemptionReceiver;
-    address public merkleClaim;
 
     event Transfer(address indexed from, address indexed to, uint value);
     event Approval(address indexed owner, address indexed spender, uint value);
@@ -37,7 +35,7 @@ contract Chronos is IChronos {
     function initialMint(address _recipient) external {
         require(msg.sender == minter && !initialMinted);
         initialMinted = true;
-        _mint(_recipient, 50 * 1e6 * 1e18);
+        _mint(_recipient, 50000000 ether);
     }
 
     function approve(address _spender, uint _value) external returns (bool) {
@@ -48,18 +46,16 @@ contract Chronos is IChronos {
 
     function _mint(address _to, uint _amount) internal returns (bool) {
         totalSupply += _amount;
-        unchecked {
-            balanceOf[_to] += _amount;
-        }
+        balanceOf[_to] += _amount;
+        
         emit Transfer(address(0x0), _to, _amount);
         return true;
     }
 
     function _transfer(address _from, address _to, uint _value) internal returns (bool) {
         balanceOf[_from] -= _value;
-        unchecked {
-            balanceOf[_to] += _value;
-        }
+        balanceOf[_to] += _value;
+
         emit Transfer(_from, _to, _value);
         return true;
     }

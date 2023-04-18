@@ -4,9 +4,8 @@ pragma solidity 0.8.13;
 import './libraries/Math.sol';
 import './interfaces/IERC20.sol';
 import './interfaces/IRouter01.sol';
-import './interfaces/IMasterchef.sol';
+import './interfaces/IMasterChef.sol';
 
-import "hardhat/console.sol";
 
 interface IPair {
     //pair.sol
@@ -23,7 +22,7 @@ contract StakingNFTFeeConverter  {
     uint256 public lastRewardtime;
 
     address public masterchef;
-    address public weth;
+    address public immutable weth;
     address public owner;
     address public router;
     address public pairFactory;
@@ -53,10 +52,10 @@ contract StakingNFTFeeConverter  {
     }
 
 
-    constructor() {
+    constructor(address _wETH) {
         owner = msg.sender;
         lastRewardtime = 0;
-        weth = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
+        weth = _wETH;
     }
 
 
@@ -98,7 +97,7 @@ contract StakingNFTFeeConverter  {
     function setDistribution() external keeper {
         uint _balance = IERC20(weth).balanceOf(address(this));
         _safeTransfer(weth, masterchef, _balance);
-        IMasterchef(masterchef).setDistributionRate(_balance);
+        IMasterChef(masterchef).setDistributionRate(_balance);
         lastRewardtime = block.timestamp;
         emit StakingReward(block.timestamp, _balance);
     }
@@ -131,7 +130,7 @@ contract StakingNFTFeeConverter  {
         _balance = IERC20(weth).balanceOf(address(this));
         if(_balance > 0){
             _safeTransfer(weth, masterchef, _balance);
-            IMasterchef(masterchef).setDistributionRate(_balance);
+            IMasterChef(masterchef).setDistributionRate(_balance);
         }
         lastRewardtime = block.timestamp;
         
@@ -191,7 +190,6 @@ contract StakingNFTFeeConverter  {
       
 
         uint256 _tokenToPosition = tokenToPosition[token];
-        delete tokenToRoutes[token];
         delete tokenToPosition[token];
         delete tokenToRoutes[token];
 

@@ -195,7 +195,7 @@ contract MasterChef is Ownable {
         user.rewardDebt = user.rewardDebt.add( int256(tokenIds.length.mul(pool.accRewardPerShare) / ACC_WETH_PRECISION) );
 
         for (uint256 i = 0; i < tokenIds.length; i++) {
-            require(NFT.ownerOf(tokenIds[i]) == msg.sender, "This NTF does not belong to address");
+            require(NFT.ownerOf(tokenIds[i]) == msg.sender, "This NTF doesn't belong to address");
 
             user.tokenIndices[tokenIds[i]] = user.tokenIds.length;
             user.tokenIds.push(tokenIds[i]);
@@ -226,13 +226,13 @@ contract MasterChef is Ownable {
                 tokenOwner[tokenIds[i]] == msg.sender,
                 "Nft Staking System: user must be the owner of the staked nft"
             );
-            NFT.transferFrom(address(this), msg.sender, tokenIds[i]);
             uint256 lastTokenId = user.tokenIds[user.tokenIds.length - 1];
             user.tokenIds[user.tokenIndices[tokenIds[i]]] = lastTokenId;
             user.tokenIndices[lastTokenId] = user.tokenIndices[tokenIds[i]];
             user.tokenIds.pop();
             delete user.tokenIndices[tokenIds[i]];
             delete tokenOwner[tokenIds[i]];
+            NFT.transferFrom(address(this), msg.sender, tokenIds[i]);
         }
 
         emit Withdraw(msg.sender, tokenIds.length, msg.sender);

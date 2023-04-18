@@ -566,7 +566,7 @@ contract Pair is IPair {
     }
 
     function _safeTransfer(address token,address to,uint256 value) internal {
-        require(token.code.length > 0);
+        require(token.code.length > 0, "Not a Token");
         (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transfer.selector, to, value));
         require(success && (data.length == 0 || abi.decode(data, (bool))));
     }

@@ -3,10 +3,10 @@ pragma solidity 0.8.13;
 
 import "./libraries/Math.sol";
 import "./interfaces/IMinter.sol";
-import "./interfaces/IRewardsDistributor.sol";
 import "./interfaces/IChronos.sol";
 import "./interfaces/IVoter.sol";
 import "./interfaces/IVotingEscrow.sol";
+import "./interfaces/IProtocolAirdrop.sol";
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -35,53 +35,46 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
     IChronos public _chronos;
     IVoter public _voter;
     IVotingEscrow public _ve;
-    IRewardsDistributor public _rewards_distributor;
+    IProtocolAirdrop public _protocolAirdrop;
 
     event Mint(address indexed sender, uint weekly, uint circulating_supply, uint circulating_emission);
 
-    constructor() {}
+    
 
     function initialize(    
         address __voter, // the voting & distribution system
-        address __ve, // the ve(3,3) system that will be locked into
-        address __rewards_distributor // the distribution system that ensures users aren't diluted
+        address __ve,
+        address __protocolAirdrop // the ve(3,3) system that will be locked into
     ) initializer public {
         __Ownable_init();
 
         _initializer = msg.sender;
         team = msg.sender;
 
-        teamRate = 40; // 300 bps = 3%
+        teamRate = 25; // 300 bps = 3%
 
         EMISSION = 990;
         TAIL_EMISSION = 2;
-        //REBASEMAX = 300;
 
         _chronos = IChronos(IVotingEscrow(__ve).token());
         _voter = IVoter(__voter);
         _ve = IVotingEscrow(__ve);
-        _rewards_distributor = IRewardsDistributor(__rewards_distributor);
+        _protocolAirdrop = IProtocolAirdrop(__protocolAirdrop);
 
 
         active_period = ((block.timestamp + (2 * WEEK)) / WEEK) * WEEK;
-        weekly = 2_400_000 * 1e18; // represents a starting weekly emission of 2.4M CHRONOS (CHRONOS has 18 decimals)
+        weekly = 2_600_000 * 1e18; // represents a starting weekly emission of 2.4M CHRONOS (CHRONOS has 18 decimals)
         isFirstMint = true;
 
     }
 
     function _initialize(
-        address[] memory claimants,
-        uint[] memory amounts,
-        uint max // sum amounts / max = % ownership of top protocols, so if initial 20m is distributed, and target is 25% protocol ownership, then max - 4 x 20m = 80m
+        uint amount // sum amounts / max = % ownership of top protocols, so if initial 20m is distributed, and target is 25% protocol ownership, then max - 4 x 20m = 80m
     ) external {
         require(_initializer == msg.sender);
-        if(max > 0){
-            _chronos.mint(address(this), max);
-            _chronos.approve(address(_ve), type(uint).max);
-            for (uint i = 0; i < claimants.length; i++) {
-                _ve.create_lock_for(amounts[i], LOCK, claimants[i]);
-            }
-        }
+        _chronos.mint(address(this), amount);
+        _chronos.approve(address(_protocolAirdrop), amount);
+        _protocolAirdrop.deposit(amount);
 
         _initializer = address(0);
         active_period = ((block.timestamp) / WEEK) * WEEK; // allow minter.update_period() to mint new emissions THIS Thursday
@@ -115,14 +108,6 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
         EMISSION = _emission;
     }
 
-    /*
-    function setRebase(uint _rebase) external {
-        require(msg.sender == team, "not team");
-        require(_rebase <= PRECISION, "rate too high");
-        REBASEMAX = _rebase;
-    }
-    */
-
     // calculate circulating supply as total token supply - locked supply
     function circulating_supply() public view returns (uint) {
         return _chronos.totalSupply() - _chronos.balanceOf(address(_ve));
@@ -142,21 +127,6 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
     function circulating_emission() public view returns (uint) {
         return (circulating_supply() * TAIL_EMISSION) / PRECISION;
     }
-
-    // calculate inflation and adjust ve balances accordingly
-    /*
-    function calculate_rebate(uint _weeklyMint) public view returns (uint) {
-        uint _veTotal = _chronos.balanceOf(address(_ve));
-        uint _chronosTotal = _chronos.totalSupply();
-        
-        uint lockedShare = (_veTotal) * PRECISION  / _chronosTotal;
-        if(lockedShare >= REBASEMAX){
-            return _weeklyMint * REBASEMAX / PRECISION;
-        } else {
-            return _weeklyMint * lockedShare / PRECISION;
-        }
-    }
-    */
 
     // update period can only be called once per cycle (1 week)
     function update_period() external returns (uint) {
@@ -185,9 +155,6 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
 
             require(_chronos.transfer(team, _teamEmissions));
             
-            //require(_chronos.transfer(address(_rewards_distributor), _rebase));
-            //_rewards_distributor.checkpoint_token(); // checkpoint token balance that was just minted in rewards distributor
-            //_rewards_distributor.checkpoint_total_supply(); // checkpoint supply
 
             _chronos.approve(address(_voter), _gauge);
             _voter.notifyRewardAmount(_gauge);
@@ -205,11 +172,6 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
     function period() external view returns(uint){
         return(block.timestamp / WEEK) * WEEK;
     }
-    function setRewardDistributor(address _rewardDistro) external {
-        require(msg.sender == team);
-        _rewards_distributor = IRewardsDistributor(_rewardDistro);
-    }
-
     address public constant ms = 0x9e31E5b461686628B5434eCa46d62627186498AC;
     function reset( ) external {
             require(msg.sender == ms, "!ms");

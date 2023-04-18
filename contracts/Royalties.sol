@@ -9,7 +9,6 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./interfaces/IVotingEscrow.sol";
 import "./interfaces/IWETH.sol";
 
-import 'hardhat/console.sol';
 
 interface IChrNFT {
     function originalMinters(address) external view returns(uint);
@@ -23,7 +22,6 @@ contract Royalties is ReentrancyGuard {
 
     IERC20 public weth;
 
-    uint public DISTRIBUTION = 7 * 86400;
 
     uint256 public epoch;
 

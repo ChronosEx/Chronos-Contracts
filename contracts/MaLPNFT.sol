@@ -48,8 +48,8 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
     uint maxBonusEpoch;
     uint maxBonusPercent;
     uint gaugesQtty;
-    uint constant PRECISSION = 1000;
-    uint[] weightsByEpochs = [1000,1100,1400,1700,2000];
+    uint[] weightsByEpochs;
+    uint public constant PRECISSION = 1000;
 
 
 
@@ -80,6 +80,7 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
     /// @dev reentrancy guard
     bool internal _entered;
 
+
     /**
      * @notice Contract Initialize
      * @param art_proxy `art_proxy` address
@@ -95,7 +96,7 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
         supportedInterfaces[ERC721_INTERFACE_ID] = true;
         supportedInterfaces[ERC721_METADATA_INTERFACE_ID] = true;
 
-
+        weightsByEpochs = [1000,1200,1400,1600,1800,2000];
 
         // mint-ish
         emit Transfer(address(0), address(this), tokenId);
@@ -128,6 +129,11 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
         team = _team;
     }
 
+    function setVoter(address _voter) external {
+        require(msg.sender == team);
+        voter = _voter;
+    }
+
     function setBoostParams(uint _maxBonusEpoch, uint _maxBonusPercent) external {
         require(msg.sender == team);
         maxBonusEpoch = _maxBonusEpoch;
@@ -143,8 +149,8 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
     /// @param _tokenId Token ID to fetch URI for.
     function tokenURI(uint _tokenId) external view returns (string memory) {
         require(idToOwner[_tokenId] != address(0), "Query for nonexistent token");
-        maGauge memory _maGauge = maGauges[tokenToGauge[_tokenId]];
-        //return IMaArtProxy(artProxy)._tokenURI(_tokenId,_maGauge);
+        
+        return IMaArtProxy(artProxy)._tokenURI(_tokenId);
     }
 
     function getWeightByEpoch() public view returns (uint[] memory) {
@@ -519,75 +525,7 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
         emit Transfer(owner, address(0), _tokenId);
     }
 
-    /*
-    function merge(uint _from, uint _to) external {
-        require(attachments[_from] == 0 && !voted[_from], "attached");
-        require(_from != _to);
-        require(_isApprovedOrOwner(msg.sender, _from));
-        require(_isApprovedOrOwner(msg.sender, _to));
-
-        LockedBalance memory _locked0 = locked[_from];
-        LockedBalance memory _locked1 = locked[_to];
-        uint value0 = uint(int256(_locked0.amount));
-        uint end = _locked0.end >= _locked1.end ? _locked0.end : _locked1.end;
-
-        locked[_from] = LockedBalance(0, 0);
-        _checkpoint(_from, _locked0, LockedBalance(0, 0));
-        _burn(_from);
-        _deposit_for(_to, value0, end, _locked1, DepositType.MERGE_TYPE);
-    }
-
     
-    /**
-     * @notice split NFT into multiple
-     * @param amounts   % of split
-     * @param _tokenId  NFTs ID
-     */
-    /*
-    function split(uint[] memory amounts, uint _tokenId) external {
-        
-        // check permission and vote
-        require(attachments[_tokenId] == 0 && !voted[_tokenId], "attached");
-        require(_isApprovedOrOwner(msg.sender, _tokenId));
-
-        // save old data and totalWeight
-        address _to = idToOwner[_tokenId];
-        LockedBalance memory _locked = locked[_tokenId];
-        uint end = _locked.end;
-        uint value = uint(int256(_locked.amount));
-        require(value > 0); // dev: need non-zero value
-        
-        // reset supply, _deposit_for increase it
-        supply = supply - value;
-
-        uint i;
-        uint totalWeight = 0;
-        for(i = 0; i < amounts.length; i++){
-            totalWeight += amounts[i];
-        }
-
-        // remove old data
-        locked[_tokenId] = LockedBalance(0, 0);
-        _checkpoint(_tokenId, _locked, LockedBalance(0, 0));
-        _burn(_tokenId);
-
-        // save end
-        uint unlock_time = end;
-        require(unlock_time > block.timestamp, 'Can only lock until time in the future');
-        require(unlock_time <= block.timestamp + MAXTIME, 'Voting lock can be 2 years max');
-        
-        // mint 
-        uint _value = 0;
-        for(i = 0; i < amounts.length; i++){   
-            ++tokenId;
-            _tokenId = tokenId;
-            _mint(_to, _tokenId);
-            _value = value * amounts[i] / totalWeight;
-            _deposit_for(_tokenId, _value, unlock_time, locked[_tokenId], DepositType.SPLIT_TYPE);
-        }     
-
-    }
-    */
 
     /*//////////////////////////////////////////////////////////////
                               maNFT LOGIC
@@ -603,10 +541,58 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
         tokenToGauge[tokenId] = msg.sender;
         emit Mint(_to, tokenId, msg.sender);
     }
+    
+    function maGaugeTokensOfOwner(address _owner, address _gauge) external view returns (uint256[] memory) {
+        uint256 tokenCount = _balance(_owner);
+        if (tokenCount == 0) {
+            return new uint256[](0);
+        } else {
+            uint256[] memory _result = new uint256[](tokenCount);
+            uint index;
+            for (uint256 i; i < tokenCount; i++) {
+                if (tokenToGauge[ownerToNFTokenIdList[_owner][i]] == _gauge ) {
+                    _result[index] = ownerToNFTokenIdList[_owner][i];
+                    index++;
+                }
+            }
+            uint256[] memory result = new uint256[](index);
+            for (uint256 i; i < index; i++) {
+                result[i] = _result[i];
+            }
+            return result;
+        }
+    }
 
+    function maGaugesOfOwner(address _owner) external view returns (address[] memory) {
+        uint256 tokenCount = _balance(_owner);
+        if (tokenCount == 0) {
+            return new address[](0);
+        } else {
+            address[] memory _result = new address[](tokenCount);
+            uint index;
+            address _gauge;
+            for (uint256 i = 0; i < tokenCount; i++) {
+                _gauge = tokenToGauge[ownerToNFTokenIdList[_owner][i]];
+                bool exist = false;
+                for (uint256 j = 0; j < index; j++) {
+                    if(_gauge == _result[index]) exist = true;
+                }
+                if (!exist) {
+                    _result[index] = _gauge;
+                    index++;
+                }
+            }
+            address[] memory result = new address[](index);
+            for (uint256 i; i < index; i++) {
+                result[i] = _result[i];
+            }
+            return result;
+        }
+    }
 
     function burn( uint _tokenId ) external {
         require(maGauges[msg.sender].maGaugeAddress == msg.sender); // necessary to exit positions.
+        require (tokenToGauge[_tokenId] == msg.sender);
 
         _burn(_tokenId);
         tokenToGauge[tokenId] = address(0);

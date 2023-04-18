@@ -45,7 +45,6 @@ contract MaGauge is ReentrancyGuard, Ownable {
     IERC20 public TOKEN;
 
     address public DISTRIBUTION;
-    address public gaugeRewarder;
     address public internal_bribe;
     address public external_bribe;
     address public maNFTs;
@@ -74,16 +73,17 @@ contract MaGauge is ReentrancyGuard, Ownable {
     event Withdraw(address indexed user, uint tokenId, uint256 amount);
     event Harvest(address indexed user, uint tokenId, uint256 reward);
     event ClaimFees(address indexed from, uint claimed0, uint claimed1);
+    event Merged(uint from, uint to);
+    event Splited(uint from,address _to,  uint[] amounts);
 
 
-
-    uint lastTimeAdjustedEpoch;
     uint WEEK;
     uint[16] balancesByEpoch;
     uint PRECISION = 1000;
 
 
-    function updateReward(uint _tokenId) public adjustWeights {
+    function updateReward(uint _tokenId) public {
+        adjustWeights();
         rewardPerTokenStored = rewardPerToken();
         lastUpdateTime = lastTimeRewardApplicable();
         if (_tokenId != 0) {
@@ -93,7 +93,7 @@ contract MaGauge is ReentrancyGuard, Ownable {
     }
 
 
-    modifier adjustWeights() {
+    function adjustWeights() public {
 
         if( block.timestamp >= nextEpoch) {
             
@@ -108,7 +108,6 @@ contract MaGauge is ReentrancyGuard, Ownable {
 
             nextEpoch = nextEpoch + WEEK;
         }
-        _;
     }
 
     modifier onlyDistribution() {
@@ -142,13 +141,6 @@ contract MaGauge is ReentrancyGuard, Ownable {
         require(_distribution != address(0), "zero addr");
         require(_distribution != DISTRIBUTION, "same addr");
         DISTRIBUTION = _distribution;
-    }
-
-    ///@notice set gauge rewarder address
-    function setGaugeRewarder(address _gaugeRewarder) external onlyOwner {
-        require(_gaugeRewarder != address(0), "zero addr");
-        require(_gaugeRewarder != gaugeRewarder, "same addr");
-        gaugeRewarder = _gaugeRewarder;
     }
 
 
@@ -221,7 +213,7 @@ contract MaGauge is ReentrancyGuard, Ownable {
 
     ///@notice get total reward for the duration
     function rewardForDuration() external view returns (uint256) {
-        return rewardRate.mul(DURATION);
+        return rewardRate * DURATION;
     }
 
 
@@ -233,6 +225,11 @@ contract MaGauge is ReentrancyGuard, Ownable {
     ///@notice deposit amount TOKEN
     function deposit(uint256 amount) external returns(uint _tokenId) {
         _tokenId = _deposit(amount, msg.sender);
+    }
+        ///@notice deposit amount TOKEN to address _to
+    function depositTo(uint256 amount, address _to) external returns(uint _tokenId) {
+        require(_to != address(0),"invalid address");
+        _tokenId = _deposit(amount, _to);
     }
 
     ///@notice deposit internal
@@ -247,7 +244,7 @@ contract MaGauge is ReentrancyGuard, Ownable {
 
         balancesByEpoch[0] = balancesByEpoch[0] + amount;
         
-        _totalSupply = _totalSupply.add(amount);
+        _totalSupply = _totalSupply + amount;
 
         TOKEN.safeTransferFrom(account, address(this), amount);
 
@@ -281,6 +278,7 @@ contract MaGauge is ReentrancyGuard, Ownable {
         balancesByEpoch[level] = balancesByEpoch[level] - amount;
         
         _balances[_tokenId] = _balances[_tokenId].sub(amount);
+        _depositEpoch[_tokenId] = 0;
 
         IMaLPNFT(maNFTs).burn(_tokenId);
 
@@ -293,8 +291,143 @@ contract MaGauge is ReentrancyGuard, Ownable {
     ///@notice withdraw TOKEN and harvest rewardToken
     function withdrawAndHarvest(uint _tokenId) external {
         getReward(_tokenId);
-        _withdraw(_balances[_tokenId]);
+        _withdraw(_tokenId);
     }
+
+    function withdrawAndHarvestAll() external {
+        uint256[] memory _tokenIds = IMaLPNFT(maNFTs).maGaugeTokensOfOwner(msg.sender,address(this));
+
+        for (uint256 i; i < _tokenIds.length; i++) {
+            getReward(_tokenIds[i]);
+            _withdraw(_tokenIds[i]);
+        }
+    }
+    
+    ///@notice withdraw all token
+    function withdrawAll() external {
+        uint256[] memory _tokenIds = IMaLPNFT(maNFTs).maGaugeTokensOfOwner(msg.sender,address(this));
+
+        for (uint256 i; i < _tokenIds.length; i++) {
+            _withdraw(_tokenIds[i]);
+        }
+    }
+
+    function getAllReward() external {
+        uint256[] memory _tokenIds = IMaLPNFT(maNFTs).maGaugeTokensOfOwner(msg.sender,address(this));
+
+        for (uint256 i; i < _tokenIds.length; i++) {
+            getReward(_tokenIds[i]);
+        }
+    }
+
+
+    function harvestAndMerge(uint _from, uint _to) external  {
+        require(_from != _to);
+        
+        getReward(_from);  //those functions ensure its from msg.sender and they are from this gauge
+        getReward(_to);
+
+        uint levelFrom = maturityLevelOfTokenMaxArray(_from);
+        uint levelTo = maturityLevelOfTokenMaxArray(_to);
+        balancesByEpoch[levelFrom] -= _balances[_from];
+        balancesByEpoch[Math.min(levelFrom, levelTo)] += _balances[_from];
+
+        _balances[_to] += _balances[_from];
+        _balances[_from] = 0;
+
+        _depositEpoch[_to] = Math.min(_depositEpoch[_to], _depositEpoch[_from]);
+        _depositEpoch[_from] = 0;
+
+        IMaLPNFT(maNFTs).burn(_from);
+
+        emit Merged( _from, _to);
+    }
+    
+    
+    function harvestAndSplit(uint[] memory amounts, uint _tokenId) external  {
+        
+        getReward(_tokenId);  //those functions ensure its from msg.sender and they are from this gauge
+
+
+        uint value = _balances[_tokenId];
+        uint __depositEpoch = _depositEpoch[_tokenId];
+
+        address _to = IMaLPNFT(maNFTs).ownerOf(_tokenId);
+
+        uint i;
+        uint _totalWeight = 0;
+        for(i = 0; i < amounts.length; i++){
+            _totalWeight += amounts[i];
+        }
+
+        uint _value = 0;
+        for(i = 0; i < amounts.length; i++){   
+
+            uint __tokenId = IMaLPNFT(maNFTs).mint(_to);
+            updateReward(__tokenId);
+            _value = value * amounts[i] / _totalWeight;
+            _depositEpoch[__tokenId] = __depositEpoch;
+            _balances[__tokenId] = _value;
+        }
+
+        _balances[_tokenId] = 0;
+        _depositEpoch[_tokenId] = 0;
+        IMaLPNFT(maNFTs).burn(_tokenId);
+
+        emit Splited( _tokenId, _to, amounts);
+    }
+
+    
+    /**
+     * @notice split NFT into multiple
+     * @param amounts   % of split
+     * @param _tokenId  NFTs ID
+     */
+    /*
+    function split(uint[] memory amounts, uint _tokenId) external {
+        
+        // check permission and vote
+        require(attachments[_tokenId] == 0 && !voted[_tokenId], "attached");
+        require(_isApprovedOrOwner(msg.sender, _tokenId));
+
+        // save old data and totalWeight
+        address _to = idToOwner[_tokenId];
+        LockedBalance memory _locked = locked[_tokenId];
+        uint end = _locked.end;
+        uint value = uint(int256(_locked.amount));
+        require(value > 0); // dev: need non-zero value
+        
+        // reset supply, _deposit_for increase it
+        supply = supply - value;
+
+        uint i;
+        uint totalWeight = 0;
+        for(i = 0; i < amounts.length; i++){
+            totalWeight += amounts[i];
+        }
+
+        // remove old data
+        locked[_tokenId] = LockedBalance(0, 0);
+        _checkpoint(_tokenId, _locked, LockedBalance(0, 0));
+        _burn(_tokenId);
+
+        // save end
+        uint unlock_time = end;
+        require(unlock_time > block.timestamp, 'Can only lock until time in the future');
+        require(unlock_time <= block.timestamp + MAXTIME, 'Voting lock can be 2 years max');
+        
+        // mint 
+        uint _value = 0;
+        for(i = 0; i < amounts.length; i++){   
+            ++tokenId;
+            _tokenId = tokenId;
+            _mint(_to, _tokenId);
+            _value = value * amounts[i] / totalWeight;
+            _deposit_for(_tokenId, _value, unlock_time, locked[_tokenId], DepositType.SPLIT_TYPE);
+        }     
+
+    }
+    */
 
  
     ///@notice User harvest function

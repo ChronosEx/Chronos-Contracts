@@ -45,6 +45,7 @@ interface IVotingEscrow {
     function balanceOf(address _owner) external view returns (uint);
     function totalSupply() external view returns (uint);
     function supply() external view returns (uint);
+    function setProtocolAirdrop(uint _tokenId, bool _airdrop) external;
 
 
     function decimals() external view returns(uint8);

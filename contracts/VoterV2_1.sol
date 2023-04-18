@@ -13,7 +13,6 @@ import './interfaces/IPairFactory.sol';
 import './interfaces/IVoter.sol';
 import './interfaces/IVotingEscrow.sol';
 import './interfaces/IMaLPNFT.sol';
-import "hardhat/console.sol";
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
@@ -67,7 +66,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     event Detach(address indexed owner, address indexed gauge, uint tokenId);
     event Whitelisted(address indexed whitelister, address indexed token);
 
-    constructor() {}
+    
 
     function initialize(address __ve, address _factory, address  _gauges, address _bribes, address _maNFTs) initializer  public {
         __Ownable_init();
@@ -464,7 +463,6 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
         gauges[_pool] = address(0);
         poolForGauge[_gauge] = address(0);
         isGauge[_gauge] = false;
-        isAlive[_gauge] = false;
         IMaLPNFT(maNFTs).killGauge(_gauge);
         claimable[_gauge] = 0;
         emit GaugeKilled(_gauge);

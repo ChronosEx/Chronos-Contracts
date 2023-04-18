@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.13;
 interface IMaGauge {
   function DISTRIBUTION (  ) external view returns ( address );
   function DURATION (  ) external view returns ( uint256 );

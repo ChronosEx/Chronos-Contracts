@@ -22,11 +22,11 @@ contract ChrNFT is ERC721Enumerable, Ownable {
     uint256 private WL2_MAX = 2;
     uint256 private OG1_MAX = 5;
     uint256 private OG2_MAX = 10;
-    uint256 private PUBLIC_MAX = 20;
+    uint256 private PUBLIC_MAX = 1000;
     uint256 public PHASE1_START = 1680105600;
     uint256 public PHASE2_START = PHASE1_START + 2 hours;
     uint256 public PHASE3_START = PHASE2_START + 2 hours;
-    uint256 public MINT_PHASE_END = PHASE3_START + 2 days;
+    uint256 public MINT_PHASE_END = PHASE3_START + 1000 days;
 
     mapping(address => bool) public isWhitelisted;
     mapping(address => bool) public isOgUser;

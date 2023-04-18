@@ -14,7 +14,8 @@ contract PairFactoryUpgradeable is IPairFactory, OwnableUpgradeable {
     uint256 public volatileFee;
     uint256 public stakingNFTFee;
     uint256 public MAX_REFERRAL_FEE; // 12%
-    uint256 public constant MAX_FEE = 40; // 0.40%
+    uint256 public constant MAX_REFERRAL_FEE_ = 1500; // 12%
+    uint256 public constant MAX_FEE = 100; // 1.0%
 
     address public feeManager;
     address public pendingFeeManager;
@@ -30,18 +31,19 @@ contract PairFactoryUpgradeable is IPairFactory, OwnableUpgradeable {
     bool internal _temp;
 
     event PairCreated(address indexed token0, address indexed token1, bool stable, address pair, uint);
+    event FeesChanged(uint volatileFee, uint stableFee, uint changeMadeTimestamp);
 
     modifier onlyManager() {
         require(msg.sender == feeManager);
         _;
     }
 
-    constructor() {}
+
     function initialize() initializer  public {
         __Ownable_init();
         isPaused = false;
         feeManager = msg.sender;
-        stableFee = 5; // 0.05%
+        stableFee = 4; // 0.04%
         volatileFee = 25; // 0.25%
         stakingNFTFee = 2000; // 20% of stable/volatileFee
         MAX_REFERRAL_FEE = 1200; // 12%
@@ -87,18 +89,21 @@ contract PairFactoryUpgradeable is IPairFactory, OwnableUpgradeable {
     }
 
     function setReferralFee(uint256 _refFee) external onlyManager {
+        require(_refFee <= MAX_REFERRAL_FEE_);
         MAX_REFERRAL_FEE = _refFee;
     }
 
 
-    function setFee(bool _stable, uint256 _fee) external onlyManager {
-        require(_fee <= MAX_FEE, 'fee');
-        require(_fee != 0);
-        if (_stable) {
-            stableFee = _fee;
-        } else {
-            volatileFee = _fee;
-        }
+    function setFee(uint _stableFee, uint256 _volatileFee) external onlyManager {
+        require(_stableFee <= MAX_FEE, 'fee');
+        require(_stableFee != 0);
+        require(_volatileFee <= MAX_FEE, 'fee');
+        require(_volatileFee != 0);
+        
+        stableFee = _stableFee;
+        volatileFee = _volatileFee;
+        
+        emit FeesChanged(_volatileFee,_stableFee, block.timestamp);
     }
 
     function getFee(bool _stable) public view returns(uint256) {

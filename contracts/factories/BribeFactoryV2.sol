@@ -13,7 +13,7 @@ contract BribeFactoryV2 is OwnableUpgradeable {
     address public last_bribe;
     address public voter;
 
-    constructor() {}
+    
     function initialize(address _voter) initializer  public {
         __Ownable_init();
         voter = _voter;

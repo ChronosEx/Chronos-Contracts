@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.13;
 interface IMaLPNFT {
 
   function addGauge ( address _maGaugeAddress, address _pool, address _token0, address _token1, uint _maGaugeId ) external;
@@ -18,6 +20,7 @@ interface IMaLPNFT {
   function ownership_change ( uint256 ) external view returns ( uint256 );
   function reset (  ) external;
   function reviveGauge ( address _gauge ) external;
+  function maGaugeTokensOfOwner(address _owner, address _gauge) external view returns (uint256[] memory);
   function fromThisGauge(uint _tokenId) external view returns(bool);
   function safeTransferFrom ( address _from, address _to, uint256 _tokenId ) external;
   function safeTransferFrom ( address _from, address _to, uint256 _tokenId, bytes memory _data  ) external;
