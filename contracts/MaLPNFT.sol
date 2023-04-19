@@ -575,7 +575,7 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
                 _gauge = tokenToGauge[ownerToNFTokenIdList[_owner][i]];
                 bool exist = false;
                 for (uint256 j = 0; j < index; j++) {
-                    if(_gauge == _result[index]) exist = true;
+                    if(_gauge == _result[j]) exist = true;
                 }
                 if (!exist) {
                     _result[index] = _gauge;

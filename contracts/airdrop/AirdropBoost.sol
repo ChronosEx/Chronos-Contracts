@@ -54,6 +54,7 @@ contract AirdropBoost {
     function deposit(uint256 amount) external {
         require(depositors[msg.sender] == true || msg.sender == owner);
         token.safeTransferFrom(msg.sender, address(this), amount);
+        token.approve(ve, 0);
         token.approve(ve, token.balanceOf(address(this)));
         
         emit Deposit(amount);
@@ -64,6 +65,7 @@ contract AirdropBoost {
         uint available = token.balanceOf(address(this));
         require(available >= amount, "Not enough balance in this wallet");
         token.safeTransfer(msg.sender, amount);
+        token.approve(ve, 0);
         token.approve(ve, token.balanceOf(address(this)));
         
         emit Withdraw(amount);

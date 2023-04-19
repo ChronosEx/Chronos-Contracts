@@ -155,7 +155,7 @@ contract MaGauge is ReentrancyGuard, Ownable {
         uint _weightAmount;
 
         for(uint i = 0; i < balancesByEpoch.length; i++) {
-            if (i <= weightsAmount.length) {
+            if (i < weightsAmount.length) {
                 _weightAmount = weightsAmount[i];
             }
             _totalWeight = _totalWeight + (balancesByEpoch[i]*_weightAmount/PRECISION);
