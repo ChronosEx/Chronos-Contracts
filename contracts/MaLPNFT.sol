@@ -512,12 +512,11 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
     }
 
     function _burn(uint _tokenId) internal {
-        require(_isApprovedOrOwner(msg.sender, _tokenId), "caller is not owner nor approved");
 
         address owner = ownerOf(_tokenId);
 
         // Clear approval
-        approve(address(0), _tokenId);
+        _clearApproval(owner, _tokenId);
         // Remove token
         //_removeTokenFrom(msg.sender, _tokenId);
         _removeTokenFrom(owner, _tokenId);

@@ -172,7 +172,7 @@ contract MaGauge is ReentrancyGuard, Ownable {
         uint _balance = _balances[_tokenId];
         uint _matLevel = maturityLevelOfTokenMaxBoost( _tokenId );
         uint[] memory weightsAmount = IMaLPNFT(maNFTs).getWeightByEpoch();
-        uint _weight = _balance*weightsAmount[_matLevel];
+        uint _weight = _balance*weightsAmount[_matLevel]/PRECISION;
         return _weight;
     }
 
@@ -327,6 +327,7 @@ contract MaGauge is ReentrancyGuard, Ownable {
         getReward(_from);  //those functions ensure its from msg.sender and they are from this gauge
         getReward(_to);
 
+        require ( maturityLevelOfTokenMaxBoost(_from) == maturityLevelOfTokenMaxBoost(_to), "Maturity level should be the same in both maNFTs");
         uint levelFrom = maturityLevelOfTokenMaxArray(_from);
         uint levelTo = maturityLevelOfTokenMaxArray(_to);
         balancesByEpoch[levelFrom] -= _balances[_from];
