@@ -115,7 +115,10 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     }
 
     function reset(uint _tokenId) external nonReentrant {
-        //require((block.timestamp / DURATION) * DURATION > lastVoted[_tokenId], "TOKEN_ALREADY_VOTED_THIS_EPOCH");
+        uint _currentEpochEnd = ((block.timestamp / DURATION)+1) * DURATION;
+        if ( _currentEpochEnd - 60*60*6 < block.timestamp ) {
+            require((block.timestamp / DURATION) * DURATION > lastVoted[_tokenId], "Last minute vote manipulation prohibited");
+        }
         require(IVotingEscrow(_ve).isApprovedOrOwner(msg.sender, _tokenId));
         lastVoted[_tokenId] = block.timestamp;
         _reset(_tokenId);
@@ -151,7 +154,11 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     }
 
     function poke(uint _tokenId) external nonReentrant {
-        //require((block.timestamp / DURATION) * DURATION > lastVoted[_tokenId], "TOKEN_ALREADY_VOTED_THIS_EPOCH");
+        uint _currentEpochEnd = ((block.timestamp / DURATION)+1) * DURATION;
+        if ( _currentEpochEnd - 60*60*6 < block.timestamp ) {
+            require((block.timestamp / DURATION) * DURATION > lastVoted[_tokenId], "Last minute vote manipulation prohibited");
+        }
+
         require(IVotingEscrow(_ve).isApprovedOrOwner(msg.sender, _tokenId));
         address[] memory _poolVote = poolVote[_tokenId];
         uint _poolCnt = _poolVote.length;
@@ -160,7 +167,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
         for (uint i = 0; i < _poolCnt; i ++) {
             _weights[i] = votes[_tokenId][_poolVote[i]];
         }
-
+        lastVoted[_tokenId] = block.timestamp;
         _vote(_tokenId, _poolVote, _weights);
     }
 
@@ -204,7 +211,11 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
 
 
     function vote(uint _tokenId, address[] calldata _poolVote, uint256[] calldata _weights) external nonReentrant {
-        //require((block.timestamp / DURATION) * DURATION > lastVoted[_tokenId], "TOKEN_ALREADY_VOTED_THIS_EPOCH");
+        uint _currentEpochEnd = ((block.timestamp / DURATION)+1) * DURATION;
+        if ( _currentEpochEnd - 60*60*6 < block.timestamp ) {
+            require((block.timestamp / DURATION) * DURATION > lastVoted[_tokenId], "Last minute vote manipulation prohibited");
+        }
+        
         require(IVotingEscrow(_ve).isApprovedOrOwner(msg.sender, _tokenId));
         require(_poolVote.length == _weights.length);
         lastVoted[_tokenId] = block.timestamp;
