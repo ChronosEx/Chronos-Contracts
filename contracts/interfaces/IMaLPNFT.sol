@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.13;
+
 interface IMaLPNFT {
+  
 
   function addGauge ( address _maGaugeAddress, address _pool, address _token0, address _token1, uint _maGaugeId ) external;
   function approve ( address _approved, uint256 _tokenId ) external;
@@ -12,7 +14,17 @@ interface IMaLPNFT {
   function isApprovedForAll ( address _owner, address _operator ) external view returns ( bool );
   function isApprovedOrOwner ( address _spender, uint256 _tokenId ) external view returns ( bool );
   function killGauge ( address _gauge ) external;
-  function maGauges ( address ) external view returns ( bool active, address pair, address token0, address token1, address maGaugeAddress, string memory name, string memory symbol );
+  function maGauges ( address ) external view returns (
+    bool active,
+    bool stablePair,
+    address pair,
+    address token0,
+    address token1,
+    address maGaugeAddress,
+    string memory name,
+    string memory symbol,
+    uint maGaugeId
+  );
   function mint ( address _to ) external returns ( uint256 _tokenId );
   function ms (  ) external view returns ( address );
   function name (  ) external view returns ( string memory );

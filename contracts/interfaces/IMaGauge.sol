@@ -11,6 +11,7 @@ interface IMaGauge {
   function _start ( uint256 ) external view returns ( uint256 );
   function _totalSupply (  ) external view returns ( uint256 );
   function balanceOfToken ( uint256 tokenId ) external view returns ( uint256 );
+  function balanceOf(address _user) external view returns (uint256);
   function claimFees (  ) external returns ( uint256 claimed0, uint256 claimed1 );
   function deposit ( uint256 amount ) external returns ( uint256 _tokenId );
   function depositAll (  ) external returns ( uint256 _tokenId );
@@ -19,6 +20,8 @@ interface IMaGauge {
   function fees0 (  ) external view returns ( uint256 );
   function fees1 (  ) external view returns ( uint256 );
   function gaugeRewarder (  ) external view returns ( address );
+  function weightOfUser(address _user ) external view returns (uint256);
+  function earned(address _user) external view returns (uint256);
   function getReward ( uint256 _tokenId ) external;
   function internal_bribe (  ) external view returns ( address );
   function isForPair (  ) external view returns ( bool );

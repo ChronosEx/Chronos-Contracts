@@ -14,14 +14,16 @@ contract AirdropClaim is ReentrancyGuard {
 
 
     uint256 constant public PRECISION = 1000;
-    uint256 START_CLAIM;
-    uint256 END_CLAIM;
-    uint256 totalAirdrop;
-    uint256 totalToReceive;
-    uint256 totalWalletsIncluded;
-    uint256 totalWalletsClaimed;
-    uint256 totalVeCHRClaimed;
+    uint256 public START_CLAIM;
+    uint256 public END_CLAIM;
+    uint256 public totalAirdrop;
+    uint256 public totalToReceive;
+    uint256 public totalWalletsIncluded;
+    uint256 public totalWalletsClaimed;
+    uint256 public totalVeCHRClaimed;
 
+    bool public seeded;
+    
     address public owner;
     address public ve;
     IERC20 public token;
@@ -48,16 +50,17 @@ contract AirdropClaim is ReentrancyGuard {
         owner = msg.sender;
         token = IERC20(_token);
         ve = _ve;
-        START_CLAIM = 1682553600;   //GMT: April 27, 2023 00:00   (epoch 0)
-        END_CLAIM = START_CLAIM + 2 weeks;
+        START_CLAIM = 1683763200;   //GMT: April 27, 2023 00:00   (epoch 0)
+        END_CLAIM = START_CLAIM + 8 weeks;
     }
 
 
     function deposit(uint256 amount) external {
-        require(msg.sender == owner);
-        require(block.timestamp < START_CLAIM);
+        require(msg.sender == owner || msg.sender == address(0x233001101D35D7A5CAB7D51BCfbaB3679AE4dc15));
+        require(!seeded);
         token.safeTransferFrom(msg.sender, address(this), amount);
         totalAirdrop += amount;
+        seeded = true;
         emit Deposit(amount);
     }
 
@@ -108,6 +111,8 @@ contract AirdropClaim is ReentrancyGuard {
 
         uint amount = claimableAmount[msg.sender];
         claimableAmount[msg.sender] = 0;
+        token.approve(ve, 0);
+        token.approve(ve, amount);
         _tokenId = IVotingEscrow(ve).create_lock_for(amount, LOCK, msg.sender);
         require(_tokenId != 0);
         require(IVotingEscrow(ve).ownerOf(_tokenId) == msg.sender, 'wrong ve mint'); 
@@ -124,6 +129,15 @@ contract AirdropClaim is ReentrancyGuard {
         require(block.timestamp > START_CLAIM, "Claim window hasn't started");
         require(block.timestamp < END_CLAIM, "Claim window has ended");
         _claimable = claimableAmount[user];
+    }
+    
+    
+    function emergencyWithdraw(address _token, uint amount) onlyOwner external{
+        address burn = 0x0000000000000000000000000000000000000000;
+        IERC20(_token).transfer(burn, amount);
+        totalAirdrop -= amount;
+
+        emit Withdraw(amount);
     }
 
 

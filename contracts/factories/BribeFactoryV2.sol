@@ -52,7 +52,7 @@ contract BribeFactoryV2 is OwnableUpgradeable {
         uint k;
         for ( i ; i < _bribes.length; i++){
             address _bribe = _bribes[i];
-            for(k = 0; k < _token.length; k++){
+            for(k = 0; k < _token[i].length; k++){
                 IBribe(_bribe).addReward(_token[i][k]);
             }
         }

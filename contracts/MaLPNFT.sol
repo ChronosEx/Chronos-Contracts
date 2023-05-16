@@ -9,22 +9,11 @@ import {IPair} from "./interfaces/IPair.sol";
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-
+import "./interfaces/IMaGaugeStruct.sol";
 
 
 contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeable {
 
-    struct maGauge {
-        bool active;
-        bool stablePair;
-        address pair;
-        address token0;
-        address token1;
-        address maGaugeAddress;
-        string name;
-        string symbol;
-        uint maGaugeId;
-    }
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -54,7 +43,7 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
 
 
     /// @dev Mapping of address to maGauge struct
-    mapping(address => maGauge) public maGauges; // epoch -> unsigned point
+    mapping(address => IMaGaugeStruct.MaGauge) public maGauges; // epoch -> unsigned point
 
     /// @dev Mapping of gaugeId to Gauge Address
     mapping(uint => address) public gaugeIdToAddress; // epoch -> unsigned point
@@ -160,6 +149,11 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
     function totalMaLevels() public view returns(uint) {
         return weightsByEpochs.length;
     }
+
+    function tokenIdView() external view returns (uint) {
+        return tokenId;
+    }
+
     /*//////////////////////////////////////////////////////////////
                       ERC721 BALANCE/OWNER STORAGE
     //////////////////////////////////////////////////////////////*/
@@ -537,7 +531,7 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
         _tokenId = tokenId;
         _mint(_to, _tokenId);
 
-        tokenToGauge[tokenId] = msg.sender;
+        tokenToGauge[_tokenId] = msg.sender;
         emit Mint(_to, tokenId, msg.sender);
     }
     
@@ -594,7 +588,7 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
         require (tokenToGauge[_tokenId] == msg.sender);
 
         _burn(_tokenId);
-        tokenToGauge[tokenId] = address(0);
+        tokenToGauge[_tokenId] = address(0);
         emit Burn(tokenId, msg.sender);
     }
     
@@ -608,7 +602,7 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
         require(msg.sender == voter);
         require(!maGauges[_maGaugeAddress].active);
 
-        maGauge memory _maGauge;
+        IMaGaugeStruct.MaGauge memory _maGauge;
         _maGauge.active = true;
         _maGauge.pair = _pool;
         _maGauge.maGaugeId = _maGaugeId;
@@ -637,7 +631,7 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
         require(msg.sender == voter);
         require(maGauges[_gauge].active);
         
-        maGauge memory _maGauge =  maGauges[_gauge];
+        IMaGaugeStruct.MaGauge memory _maGauge =  maGauges[_gauge];
         _maGauge.active = false;
         
         maGauges[_gauge] =_maGauge;
@@ -648,7 +642,7 @@ contract MaLPNFT is Initializable, IERC721Upgradeable, IERC721MetadataUpgradeabl
         require(msg.sender == voter);
         require(!maGauges[_gauge].active);
         
-        maGauge memory _maGauge =  maGauges[_gauge];
+        IMaGaugeStruct.MaGauge memory _maGauge =  maGauges[_gauge];
         _maGauge.active = true;
         
         maGauges[_gauge] =_maGauge;

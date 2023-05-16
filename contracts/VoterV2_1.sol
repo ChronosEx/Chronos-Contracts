@@ -68,7 +68,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     event Detach(address indexed owner, address indexed gauge, uint tokenId);
     event Whitelisted(address indexed whitelister, address indexed token);
 
-    
+    uint256 restTime;
 
     function initialize(address __ve, address _factory, address  _gauges, address _bribes, address _maNFTs) initializer  public {
         __Ownable_init();
@@ -99,6 +99,12 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
         minter = _minter;
     }
 
+    function changeRestTime(uint256 _restTime) external {
+        require(msg.sender == emergencyCouncil);
+        require(_restTime <= 60*60*6);
+        restTime = _restTime;
+    }
+
     function setGovernor(address _governor) public {
         require(msg.sender == governor);
         governor = _governor;
@@ -116,7 +122,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
 
     function reset(uint _tokenId) external nonReentrant {
         uint _currentEpochEnd = ((block.timestamp / DURATION)+1) * DURATION;
-        if ( _currentEpochEnd - 60*60*6 < block.timestamp ) {
+        if ( _currentEpochEnd - restTime < block.timestamp ) {
             require((block.timestamp / DURATION) * DURATION > lastVoted[_tokenId], "Last minute vote manipulation prohibited");
         }
         require(IVotingEscrow(_ve).isApprovedOrOwner(msg.sender, _tokenId));
@@ -155,7 +161,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
 
     function poke(uint _tokenId) external nonReentrant {
         uint _currentEpochEnd = ((block.timestamp / DURATION)+1) * DURATION;
-        if ( _currentEpochEnd - 60*60*6 < block.timestamp ) {
+        if ( _currentEpochEnd - restTime < block.timestamp ) {
             require((block.timestamp / DURATION) * DURATION > lastVoted[_tokenId], "Last minute vote manipulation prohibited");
         }
 
@@ -212,7 +218,7 @@ contract VoterV2_1 is IVoter, OwnableUpgradeable, ReentrancyGuardUpgradeable {
 
     function vote(uint _tokenId, address[] calldata _poolVote, uint256[] calldata _weights) external nonReentrant {
         uint _currentEpochEnd = ((block.timestamp / DURATION)+1) * DURATION;
-        if ( _currentEpochEnd - 60*60*6 < block.timestamp ) {
+        if ( _currentEpochEnd - restTime < block.timestamp ) {
             require((block.timestamp / DURATION) * DURATION > lastVoted[_tokenId], "Last minute vote manipulation prohibited");
         }
         

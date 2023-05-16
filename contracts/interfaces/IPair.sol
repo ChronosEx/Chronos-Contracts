@@ -14,6 +14,7 @@ interface IPair {
     function getAmountOut(uint, address) external view returns (uint);
 
     function name() external view returns(string memory);
+    function fees() external view returns(address);
     function symbol() external view returns(string memory);
     function totalSupply() external view returns (uint);
     function decimals() external view returns (uint8);
@@ -22,6 +23,7 @@ interface IPair {
     function claimable1(address _user) external view returns (uint);
 
     function isStable() external view returns(bool);
+    function sync() external;
 
 
     /*function token0() external view returns(address);

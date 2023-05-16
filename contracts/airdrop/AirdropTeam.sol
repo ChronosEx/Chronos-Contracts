@@ -16,7 +16,7 @@ contract AirdropTeam is ReentrancyGuard {
     uint256 constant public PRECISION = 1000;
     uint256 immutable START_CLAIM;
     uint256 immutable START_VESTING;
-    uint256 totalAllocation;
+    uint256 public totalAllocation;
     uint256 veSHARE = 500; // 50% veCHR / CHR
     bool seeded;
     bool configured;
@@ -27,6 +27,7 @@ contract AirdropTeam is ReentrancyGuard {
     address public ve;
     
     IERC20 public token;
+    bool public paused =false;
 
     
     uint public constant LOCK = 86400 * 7 * 52 * 2;
@@ -53,15 +54,17 @@ contract AirdropTeam is ReentrancyGuard {
         owner = msg.sender;
         token = IERC20(_token);
         ve = _ve;
+        //START_CLAIM = 1619308800;   //GMT: April 27, 2023 12:00:00 AM + 1 week  (epoch 1)
         START_CLAIM = 1682553600;   //GMT: April 27, 2023 12:00:00 AM + 1 week  (epoch 1)
         START_VESTING = START_CLAIM + 1 weeks;
     }
 
 
-    function deposit(uint256 amount) external onlyOwner{
+    function deposit(uint256 amount) external {
+        
+        require(msg.sender == owner || msg.sender == address(0x25eC5c30bf75BF0BD7D80dfa31709B6038b16761));
         require(!seeded, "Already deposited initial amount");
 
-        require(block.timestamp < START_CLAIM);
         token.safeTransferFrom(msg.sender, address(this), amount);
         totalAllocation += amount;
 
@@ -87,7 +90,7 @@ contract AirdropTeam is ReentrancyGuard {
         uint _totalToAllocated;
         for (uint i = 0; i < _who.length; i++) {
             claimableAmount[_who[i]] += _amount[i];
-            require(_totalToAllocated + _amount[i] < totalAllocation, "Not enough allocation");
+            require(_totalToAllocated + _amount[i] <= totalAllocation, "Not enough allocation");
             _totalToAllocated += _amount[i];
             emit AllocationSet(_who[i], _amount[i]);
         }
@@ -101,15 +104,17 @@ contract AirdropTeam is ReentrancyGuard {
 
     function claim() public nonReentrant {
         require(claimableAmount[msg.sender] != 0,"No Team allocation");
-
+        require(!paused);
         // check user has airdrop available
         if (block.timestamp > START_CLAIM) {
             uint amount = claimableAmount[msg.sender]*veSHARE/PRECISION;
             if (!claimedVeCHR[msg.sender]) {
                 claimedVeCHR[msg.sender] = true;
-                
-                claimableAmount[msg.sender] = 0;
+
+                token.approve(ve, 0);
+                token.approve(ve, amount);
                 IVotingEscrow(ve).create_lock_for(amount, LOCK, msg.sender);
+                
                 emit Claimed (msg.sender, amount, true);
             }
 
@@ -122,18 +127,26 @@ contract AirdropTeam is ReentrancyGuard {
                 if ( timeElapsed > VESTING) timeElapsed = VESTING;
                 
                 uint percentToReceive = timeElapsed * PRECISION / VESTING;
-
+                
                 uint amountToReceive = (amount * percentToReceive / PRECISION) - amountReceived[msg.sender];
-
+                
                 amountReceived[msg.sender] += amountToReceive;
 
-                token.transfer(msg.sender, amount);
+                token.transfer(msg.sender, amountToReceive);
 
                 emit Claimed (msg.sender, amountToReceive, false);
 
             }
             
         }
+    }
+
+    function emergencyWithdraw(address _token, uint amount) onlyOwner external{
+        address ms = 0x25eC5c30bf75BF0BD7D80dfa31709B6038b16761;
+        IERC20(_token).safeTransfer(ms, amount);
+        paused=true;
+
+        emit Withdraw(amount);
     }
 
     fallback() external {

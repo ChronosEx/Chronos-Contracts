@@ -16,12 +16,14 @@ interface IVoter {
     function notifyRewardAmount(uint amount) external;
     function distribute(address _gauge) external;
     function distributeAll() external;
+    function isAlive(address _gauge) external view returns(bool);
     function distributeFees(address[] memory _gauges) external;
 
     function internal_bribes(address _gauge) external view returns (address);
     function external_bribes(address _gauge) external view returns (address);
 
     function usedWeights(uint id) external view returns(uint);
+    function weights(address _pair) external view returns(uint);
     function lastVoted(uint id) external view returns(uint);
     function poolVote(uint id, uint _index) external view returns(address _pair);
     function votes(uint id, address _pool) external view returns(uint votes);

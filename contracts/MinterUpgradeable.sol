@@ -76,9 +76,6 @@ contract MinterUpgradeable is IMinter, OwnableUpgradeable {
         uint amount // sum amounts / max = % ownership of top protocols, so if initial 20m is distributed, and target is 25% protocol ownership, then max - 4 x 20m = 80m
     ) external {
         require(_initializer == msg.sender);
-        _chronos.mint(address(this), amount);
-        _chronos.approve(address(_protocolAirdrop), amount);
-        _protocolAirdrop.deposit(amount);
 
         _initializer = address(0);
         active_period = ((block.timestamp) / WEEK) * WEEK; // allow minter.update_period() to mint new emissions THIS Thursday

@@ -163,8 +163,18 @@ contract MaGauge is ReentrancyGuard, Ownable {
     }
 
     ///@notice balance of a position
-    function balanceOfToken(uint tokenId) external view returns (uint256) {
+    function balanceOfToken(uint tokenId) public view returns (uint256) {
         return _balances[tokenId];
+    }
+
+        ///@notice balance of a position
+    function balanceOf(address _user) external view returns (uint256) {
+        uint _totalBalance;
+        uint[] memory _tokenIds = IMaLPNFT(maNFTs).maGaugeTokensOfOwner(_user, address(this));
+        for (uint i; i < _tokenIds.length; i++){
+            _totalBalance += balanceOfToken(_tokenIds[i]);
+        }
+        return _totalBalance;
     }
 
     ///@notice weight of a position
@@ -174,6 +184,17 @@ contract MaGauge is ReentrancyGuard, Ownable {
         uint[] memory weightsAmount = IMaLPNFT(maNFTs).getWeightByEpoch();
         uint _weight = _balance*weightsAmount[_matLevel]/PRECISION;
         return _weight;
+    }
+
+    
+    ///@notice total weight of a user
+    function weightOfUser(address _user ) public view returns (uint256) {
+        uint _totalWeight;
+        uint[] memory _tokenIds = IMaLPNFT(maNFTs).maGaugeTokensOfOwner(_user, address(this));
+        for (uint i; i < _tokenIds.length; i++){
+            _totalWeight += weightOfToken(_tokenIds[i]);
+        }
+        return _totalWeight;
     }
 
     function maturityLevelOfTokenMaxBoost(uint _tokenId) public view returns (uint _matLevel) {
@@ -206,10 +227,21 @@ contract MaGauge is ReentrancyGuard, Ownable {
         }
     }
 
-    ///@notice see earned rewards for user
+    ///@notice see earned rewards for a _tokenId
     function earned(uint _tokenId) public view returns (uint256) {
         return weightOfToken(_tokenId).mul(rewardPerToken().sub(userRewardPerTokenPaid[_tokenId])).div(1e18).add(rewards[_tokenId]);
     }
+
+    ///@notice see earned rewards for user
+    function earned(address _user) public view returns (uint256) {
+        uint _totalEarned;
+        uint[] memory _tokenIds = IMaLPNFT(maNFTs).maGaugeTokensOfOwner(_user, address(this));
+        for (uint i; i < _tokenIds.length; i++){
+            _totalEarned += weightOfToken(_tokenIds[i]).mul(rewardPerToken().sub(userRewardPerTokenPaid[_tokenIds[i]])).div(1e18).add(rewards[_tokenIds[i]]);
+        }
+        return _totalEarned;
+    }
+
 
     ///@notice get total reward for the duration
     function rewardForDuration() external view returns (uint256) {
@@ -246,20 +278,11 @@ contract MaGauge is ReentrancyGuard, Ownable {
         
         _totalSupply = _totalSupply + amount;
 
-        TOKEN.safeTransferFrom(account, address(this), amount);
+        TOKEN.safeTransferFrom(msg.sender, address(this), amount);
 
         emit Deposit(account, _tokenId, amount);
     }
 
-    ///@notice withdraw all token
-    /*function withdrawAll() external {
-        _withdraw(_balances[msg.sender]);
-    }*/
-
-    ///@notice withdraw a certain amount of TOKEN
-    function withdraw(uint256 _tokenId) external {
-        _withdraw(_tokenId);
-    }
 
     ///@notice withdraw internal
     function _withdraw(uint256 _tokenId) internal nonReentrant {
@@ -303,14 +326,6 @@ contract MaGauge is ReentrancyGuard, Ownable {
         }
     }
     
-    ///@notice withdraw all token
-    function withdrawAll() external {
-        uint256[] memory _tokenIds = IMaLPNFT(maNFTs).maGaugeTokensOfOwner(msg.sender,address(this));
-
-        for (uint256 i; i < _tokenIds.length; i++) {
-            _withdraw(_tokenIds[i]);
-        }
-    }
 
     function getAllReward() external {
         uint256[] memory _tokenIds = IMaLPNFT(maNFTs).maGaugeTokensOfOwner(msg.sender,address(this));
@@ -323,20 +338,14 @@ contract MaGauge is ReentrancyGuard, Ownable {
 
     function harvestAndMerge(uint _from, uint _to) external  {
         require(_from != _to);
+        require ( _depositEpoch[_from] == _depositEpoch[_to], "Maturity level should be the same in both maNFTs");
         
         getReward(_from);  //those functions ensure its from msg.sender and they are from this gauge
         getReward(_to);
 
-        require ( maturityLevelOfTokenMaxBoost(_from) == maturityLevelOfTokenMaxBoost(_to), "Maturity level should be the same in both maNFTs");
-        uint levelFrom = maturityLevelOfTokenMaxArray(_from);
-        uint levelTo = maturityLevelOfTokenMaxArray(_to);
-        balancesByEpoch[levelFrom] -= _balances[_from];
-        balancesByEpoch[Math.min(levelFrom, levelTo)] += _balances[_from];
-
         _balances[_to] += _balances[_from];
         _balances[_from] = 0;
 
-        _depositEpoch[_to] = Math.min(_depositEpoch[_to], _depositEpoch[_from]);
         _depositEpoch[_from] = 0;
 
         IMaLPNFT(maNFTs).burn(_from);
